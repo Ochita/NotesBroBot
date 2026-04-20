@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "notesbro-bot"
+version = "0.1.0"
+description = "Telegram bot: voice messages → Gemini notes (title, list, bullets)."
+requires-python = ">=3.11"
+dependencies = [
+  "python-telegram-bot>=22.5,<23.0",
+  "google-genai>=1.0",
+  "PyYAML>=6.0.2",
+  "pydantic>=2.0",
+  "aiosqlite>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.11.0",
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.25.3",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

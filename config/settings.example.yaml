@@ -1,0 +1,12 @@
+telegram_bot_token: "your-telegram-bot-token"
+api_key: "your-gemini-api-key"
+
+# Gemini model id for speech-to-text.
+model_name: "gemini-3.1-flash-lite-preview"
+
+# SQLite file (created automatically). Stores users whitelist and last note per user.
+database_path: "notesbro.sqlite3"
+# When false, only user_ids already in the users table may use the bot (whitelist).
+allow_new_users: true
+# Whitelist example when allow_new_users is false (use your numeric ids):
+# sqlite3 notesbro.sqlite3 "INSERT OR IGNORE INTO users(user_id, chat_id) VALUES (123456789, 123456789);"
