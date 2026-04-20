@@ -16,8 +16,10 @@ LOGGER = logging.getLogger(__name__)
 
 _GEMINI_RETRIES = 3
 
-def _generate_with_retries(client: "genai.Client", *, model: str, contents, config):
-    last_err: Exception | None = None
+
+def _generate_with_retries(
+    client: "genai.Client", *, model: str, contents, config
+):
     for attempt in range(1, _GEMINI_RETRIES + 1):
         try:
             return client.models.generate_content(
@@ -25,31 +27,36 @@ def _generate_with_retries(client: "genai.Client", *, model: str, contents, conf
                 contents=contents,
                 config=config,
             )
-        except Exception as e:
-            last_err = e
+        except Exception:
             if attempt < _GEMINI_RETRIES:
                 time.sleep(0.8 * attempt)
                 continue
             raise
 
-_SUMMARY_INSTRUCTION = """You turn a raw speech transcript into short structured notes.
+_SUMMARY_INSTRUCTION = """Turn a raw speech transcript into structured notes.
 
 Rules:
-- note_title: a clear, concise title for the whole note (like naming a notebook page).
-- list_title: one thematic heading for the bullet list (not a repeat of note_title).
-- items: 3 to 8 short bullets summarizing the transcript. Each bullet one idea, one line.
+- note_title: a clear title for the whole note.
+- list_title: one heading for the bullet list (not a repeat of note_title).
+- items: 3 to 8 short bullets. One idea per line.
 - Use the same language as the transcript when possible.
-- Do not invent facts; only summarize what is implied or stated in the transcript.
+- Do not invent facts; only summarize what is implied or stated.
 """
 
 
-_MERGE_INSTRUCTION = """You merge an existing structured note with new spoken content.
+_MERGE_INSTRUCTION = """Merge an existing note with new spoken content.
 
-You will be given the existing note as JSON, then the new transcript in plain text.
+You will be given the existing note as JSON, then the new transcript in plain
+text.
 
-Return one updated VoiceNote: refine note_title if needed, one list_title, and a merged
-items list. Remove clear duplicates; keep facts from both the prior note and the new
-transcript. Prefer roughly 4–14 bullets; stay within the schema max length."""
+Return one updated VoiceNote: refine note_title if needed, one list_title,
+and a merged
+items list.
+
+Remove clear duplicates; keep facts from both the prior note and the new
+transcript.
+Prefer roughly 4–14 bullets; stay within the schema max length.
+"""
 
 
 def merge_transcript_into_note_sync(
@@ -111,7 +118,9 @@ def summarize_transcript_to_note_sync(
     text = (response.text or "").strip()
     if text:
         return _normalize_note(VoiceNote.model_validate_json(text))
-    LOGGER.warning("Structured note response empty; raw candidates may be blocked.")
+    LOGGER.warning(
+        "Structured note response empty; raw candidates may be blocked."
+    )
     raise ValueError("Model returned no structured note.")
 
 
@@ -146,8 +155,9 @@ def voice_note_to_telegram_html(note: VoiceNote, max_len: int = 3900) -> str:
 def parse_voice_note_from_message_text(text: str) -> VoiceNote | None:
     """Best-effort parse of a bot note message back into a VoiceNote.
 
-    Works on the bot's own Telegram-HTML-ish output where bullets are lines starting
-    with '• ' and the first two headings contain the title and list title.
+    Works on the bot's own Telegram-HTML-ish output where bullets are lines
+    starting with '• ' and the first two headings contain the title and list
+    title.
     """
     if not text:
         return None

@@ -12,7 +12,7 @@ class Settings:
     api_key: str
     model_name: str
     database_path: str
-    #: When false, only Telegram user_ids already present in the users table may use the bot.
+    #: When false, only users already present in the users table may use it.
     allow_new_users: bool
 
 
@@ -44,7 +44,9 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
 
     allow_new_users = data.get("allow_new_users", True)
     if not isinstance(allow_new_users, bool):
-        raise ValueError("allow_new_users must be true or false in YAML config.")
+        raise ValueError(
+            "allow_new_users must be true or false in YAML config."
+        )
 
     return Settings(
         telegram_bot_token=token,

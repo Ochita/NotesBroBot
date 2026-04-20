@@ -5,6 +5,6 @@ model_name: "gemini-3.1-flash-lite-preview"
 # Persist whitelist DB in the Docker volume.
 database_path: "/app/data/notesbro.sqlite3"
 
-# When false, only user_ids already in the users table may use the bot.
+# When false, only users already present in the users table may use the bot.
 allow_new_users: true
 

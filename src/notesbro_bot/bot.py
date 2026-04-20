@@ -35,8 +35,8 @@ _ACCESS_CLOSED_TEXT = (
     "administrator to add your Telegram user id to the database."
 )
 
-# user_data keys: next voice after /add is treated as merge (Telegram has no reliable
-# caption on push-to-talk voice).
+# user_data keys: next voice after /add is treated as merge.
+# (Telegram has no reliable caption on push-to-talk voice.)
 _UD_AWAITING_ADD_VOICE = "awaiting_add_voice"
 _UD_AWAITING_ADD_DEADLINE_MONO = "awaiting_add_deadline_mono"
 _UD_ADD_TARGET_MESSAGE_ID = "add_target_message_id"
@@ -54,7 +54,9 @@ def _disarm_add_voice(user_data: dict) -> None:
     user_data.pop(_UD_ADD_STATUS_MESSAGE_ID, None)
 
 
-def _arm_add_voice(user_data: dict, ttl_sec: float = _ADD_VOICE_TTL_SEC) -> None:
+def _arm_add_voice(
+    user_data: dict, ttl_sec: float = _ADD_VOICE_TTL_SEC
+) -> None:
     user_data[_UD_AWAITING_ADD_VOICE] = True
     user_data[_UD_AWAITING_ADD_DEADLINE_MONO] = time.monotonic() + ttl_sec
 
@@ -74,22 +76,21 @@ def transcribe_voice_sync(
 ) -> str:
     import time as _time
 
-    last_err: Exception | None = None
     for attempt in range(1, _GEMINI_RETRIES + 1):
         try:
             response = client.models.generate_content(
                 model=model_name,
                 contents=[
                     (
-                        "Transcribe this speech accurately. Reply with only the transcribed "
-                        "words, no labels or commentary."
+                        "Transcribe this speech accurately. "
+                        "Reply with only the transcribed words, "
+                        "no labels or commentary."
                     ),
                     types.Part.from_bytes(data=audio, mime_type=mime_type),
                 ],
             )
             return (response.text or "").strip()
-        except Exception as e:
-            last_err = e
+        except Exception:
             if attempt < _GEMINI_RETRIES:
                 _time.sleep(0.8 * attempt)
                 continue
@@ -123,7 +124,9 @@ async def _post_init(application: Application) -> None:
     LOGGER.info("Database initialized")
 
 
-async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_start(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if update.effective_user is None or update.effective_chat is None:
         return
     if await _is_access_denied(update, context):
@@ -135,11 +138,13 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     if update.message:
         await update.message.reply_text(
-            "Send a voice message. I will transcribe it with Gemini, then reply "
-            "with summarized notes: a note title, a list heading, and bullet points.\n\n"
-            "To extend a note: reply /add to the note message you want to update, "
-            "then send your next voice message within two minutes. /cancel clears "
-            "an armed /add. (This does not store message ids in the database.)"
+            "Send a voice message. I will transcribe it with Gemini, then "
+            "reply "
+            "with summarized notes: a note title, a list heading, and bullet "
+            "points.\n\n"
+            "To extend a note: reply /add to the note message you want to "
+            "update, then send your next voice message within two minutes. "
+            "/cancel clears an armed /add. (No message ids are stored.)"
         )
 
 
@@ -155,8 +160,6 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ud = context.user_data
     if ud is None:
         return
-
-    chat_id = update.effective_chat.id
 
     if update.message.reply_to_message is None:
         _disarm_add_voice(ud)
@@ -180,13 +183,15 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ud[_UD_ADD_TARGET_MESSAGE_ID] = int(target_message_id)
     ud[_UD_ADD_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
     status_msg = await update.message.reply_text(
-        f"OK. Send 1 voice message within {_ADD_VOICE_TTL_SEC:.0f}s to merge into that note. "
+        f"OK. Send 1 voice within {_ADD_VOICE_TTL_SEC:.0f}s to merge. "
         "Use /cancel to stop."
     )
     ud[_UD_ADD_STATUS_MESSAGE_ID] = int(status_msg.message_id)
 
 
-async def cmd_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def cmd_cancel(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
     if update.effective_user is None or update.message is None:
         return
     if await _is_access_denied(update, context):
@@ -205,9 +210,13 @@ async def _safe_delete_message(
     context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int
 ) -> None:
     try:
-        await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        await context.bot.delete_message(
+            chat_id=chat_id, message_id=message_id
+        )
     except Exception:
-        LOGGER.debug("Could not delete message %s in chat %s", message_id, chat_id)
+        LOGGER.debug(
+            "Could not delete message %s in chat %s", message_id, chat_id
+        )
 
 
 async def _safe_edit_message(
@@ -224,8 +233,10 @@ async def _safe_edit_message(
             text=text,
         )
     except Exception:
-        # Message could be too old to edit or already deleted; fall back to no-op.
-        LOGGER.debug("Could not edit message %s in chat %s", message_id, chat_id)
+        # Message could be too old to edit or already deleted. No-op.
+        LOGGER.debug(
+            "Could not edit message %s in chat %s", message_id, chat_id
+        )
 
 
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -321,7 +332,9 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if not transcript:
         if status is not None:
-            await status.edit_text("(No speech recognized; try again or speak closer.)")
+            await status.edit_text(
+                "(No speech recognized; try again or speak closer.)"
+            )
         elif merge and add_status_message_id is not None:
             await _safe_edit_message(
                 context,
@@ -399,7 +412,9 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             assert status is not None
             await status.edit_text(html_body, parse_mode=ParseMode.HTML)
     except Exception as e:
-        LOGGER.exception("Telegram HTML edit failed, sending plain transcript fallback")
+        LOGGER.exception(
+            "Telegram HTML edit failed, sending plain transcript fallback"
+        )
         if status is not None:
             await status.edit_text(
                 f"(Could not send formatted notes: {e})\n\n{transcript}"

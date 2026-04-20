@@ -16,7 +16,9 @@ class VoiceNote(BaseModel):
         ...,
         min_length=1,
         max_length=200,
-        description="Heading for the bullet list (e.g. Key points, Next steps).",
+        description=(
+            "Heading for the bullet list (e.g. Key points, Next steps)."
+        ),
     )
     items: list[str] = Field(
         ...,
