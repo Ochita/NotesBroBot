@@ -1,0 +1,27 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.so
+
+# Packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Tooling caches
+.mypy_cache/
+.ruff_cache/
+
+# Local SQLite databases
+*.sqlite3
+
+# Local config with secrets
+config/settings.yaml
+config/*.local.yaml
