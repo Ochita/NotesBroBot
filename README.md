@@ -69,6 +69,51 @@ Or use a custom config path:
 python -m notesbro_bot --config /run/secrets/notesbro/settings.yaml
 ```
 
+## Run with Docker
+
+1. Prepare Docker config file:
+
+```bash
+cp config/settings.docker.example.yaml config/settings.yaml
+```
+
+Edit `config/settings.yaml` and set:
+- `telegram_bot_token`
+- `api_key`
+- `model_name`
+- optionally `allow_new_users`
+
+2. Build image:
+
+```bash
+docker build -t notesbro-bot:latest .
+```
+
+3. Run container:
+
+```bash
+docker run -d \
+  --name notesbro-bot \
+  --restart unless-stopped \
+  -v "$(pwd)/config/settings.yaml:/run/secrets/notesbro/settings.yaml:ro" \
+  -v notesbro_data:/app/data \
+  notesbro-bot:latest
+```
+
+The SQLite database is persisted in Docker volume `notesbro_data`.
+
+## Run with Docker Compose
+
+```bash
+docker compose up -d --build
+```
+
+Stop:
+
+```bash
+docker compose down
+```
+
 ## Commands
 
 - `/start` subscribe user (and pass whitelist check if enabled)
