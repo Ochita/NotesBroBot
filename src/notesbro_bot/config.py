@@ -5,11 +5,20 @@ from pathlib import Path
 
 import yaml
 
+_DEFAULT_BASE_URL = "https://api.aitunnel.ru/v1/"
+_DEFAULT_STT_MODEL = "voxtral-small-24b-2507-stt"
+_DEFAULT_MODEL_NAME = "deepseek-v4-flash"
+
 
 @dataclass(frozen=True, slots=True)
 class Settings:
     telegram_bot_token: str
     api_key: str
+    #: OpenAI-compatible API root, for example AITunnel.
+    base_url: str
+    #: Speech-to-text model id on that endpoint.
+    stt_model: str
+    #: Chat model id on that endpoint. Turns a transcript into a note.
     model_name: str
     database_path: str
     #: When false, only users already present in the users table may use it.
@@ -37,7 +46,9 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
     if not api_key:
         raise ValueError("Missing api_key in YAML config.")
 
-    model_name = _model_name(data)
+    stt_model = _model_id(data, "stt_model", _DEFAULT_STT_MODEL)
+    model_name = _model_id(data, "model_name", _DEFAULT_MODEL_NAME)
+    base_url = _base_url(data)
     database_path = str(data.get("database_path", "notesbro.sqlite3")).strip()
     if not database_path:
         raise ValueError("database_path cannot be empty in YAML config.")
@@ -51,6 +62,8 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
     return Settings(
         telegram_bot_token=token,
         api_key=api_key,
+        base_url=base_url,
+        stt_model=stt_model,
         model_name=model_name,
         database_path=database_path,
         allow_new_users=allow_new_users,
@@ -62,13 +75,19 @@ def _required(data: dict, key: str) -> str:
     return str(value).strip()
 
 
-def _model_name(data: dict) -> str:
-    raw = data.get("model_name")
-    if raw is None:
-        raw = "gemini-2.0-flash"
+def _base_url(data: dict) -> str:
+    raw = data.get("base_url", _DEFAULT_BASE_URL)
+    url = str(raw).strip()
+    if not url:
+        raise ValueError("base_url cannot be empty in YAML config.")
+    return url
+
+
+def _model_id(data: dict, key: str, default: str) -> str:
+    raw = data.get(key, default)
     if isinstance(raw, list):
-        raise ValueError("model_name must be a single string, not a list.")
+        raise ValueError(f"{key} must be a single string, not a list.")
     model = str(raw).strip()
     if not model:
-        raise ValueError("Missing model_name in YAML config.")
+        raise ValueError(f"Missing {key} in YAML config.")
     return model

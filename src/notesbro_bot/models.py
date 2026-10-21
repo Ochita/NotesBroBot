@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 
 class VoiceNote(BaseModel):
-    """Structured summary returned by Gemini for a voice transcript."""
+    """Structured summary of a voice transcript."""
 
     note_title: str = Field(
         ...,

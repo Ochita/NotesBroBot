@@ -5,33 +5,39 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from google.genai import types
-
 from notesbro_bot.models import VoiceNote
 
 if TYPE_CHECKING:
-    from google import genai
+    from openai import OpenAI
 
 LOGGER = logging.getLogger(__name__)
 
-_GEMINI_RETRIES = 3
+_API_RETRIES = 3
 
 
-def _generate_with_retries(
-    client: "genai.Client", *, model: str, contents, config
-):
-    for attempt in range(1, _GEMINI_RETRIES + 1):
+def _complete_note(client: "OpenAI", model: str, prompt: str) -> VoiceNote:
+    for attempt in range(1, _API_RETRIES + 1):
         try:
-            return client.models.generate_content(
+            response = client.chat.completions.parse(
                 model=model,
-                contents=contents,
-                config=config,
+                messages=[{"role": "user", "content": prompt}],
+                response_format=VoiceNote,
             )
+            message = response.choices[0].message
+            parsed = message.parsed
+            if isinstance(parsed, VoiceNote):
+                return _normalize_note(parsed)
+            text = (message.content or "").strip()
+            if text:
+                return _normalize_note(VoiceNote.model_validate_json(text))
+            LOGGER.warning("Structured note response empty.")
+            raise ValueError("Model returned no structured note.")
         except Exception:
-            if attempt < _GEMINI_RETRIES:
+            if attempt < _API_RETRIES:
                 time.sleep(0.8 * attempt)
                 continue
             raise
+
 
 _SUMMARY_INSTRUCTION = """Turn a raw speech transcript into structured notes.
 
@@ -60,68 +66,28 @@ Prefer roughly 4–14 bullets; stay within the schema max length.
 
 
 def merge_transcript_into_note_sync(
-    client: "genai.Client",
+    client: "OpenAI",
     model_name: str,
     previous: VoiceNote,
     new_transcript: str,
 ) -> VoiceNote:
-    existing = previous.model_dump_json()
     prompt = (
         _MERGE_INSTRUCTION
         + "\n\nExisting note (JSON):\n"
-        + existing
+        + previous.model_dump_json()
         + "\n\nNew transcript:\n"
         + new_transcript
     )
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=VoiceNote,
-    )
-    response = _generate_with_retries(
-        client, model=model_name, contents=[prompt], config=config
-    )
-    parsed = response.parsed
-    if isinstance(parsed, VoiceNote):
-        return _normalize_note(parsed)
-    if isinstance(parsed, dict):
-        return _normalize_note(VoiceNote.model_validate(parsed))
-    text = (response.text or "").strip()
-    if text:
-        return _normalize_note(VoiceNote.model_validate_json(text))
-    LOGGER.warning("Merge response empty.")
-    raise ValueError("Model returned no merged note.")
+    return _complete_note(client, model_name, prompt)
 
 
 def summarize_transcript_to_note_sync(
-    client: "genai.Client",
+    client: "OpenAI",
     model_name: str,
     transcript: str,
 ) -> VoiceNote:
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=VoiceNote,
-    )
-    response = _generate_with_retries(
-        client,
-        model=model_name,
-        contents=[
-            _SUMMARY_INSTRUCTION,
-            f"Transcript:\n{transcript}",
-        ],
-        config=config,
-    )
-    parsed = response.parsed
-    if isinstance(parsed, VoiceNote):
-        return _normalize_note(parsed)
-    if isinstance(parsed, dict):
-        return _normalize_note(VoiceNote.model_validate(parsed))
-    text = (response.text or "").strip()
-    if text:
-        return _normalize_note(VoiceNote.model_validate_json(text))
-    LOGGER.warning(
-        "Structured note response empty; raw candidates may be blocked."
-    )
-    raise ValueError("Model returned no structured note.")
+    prompt = f"{_SUMMARY_INSTRUCTION}\n\nTranscript:\n{transcript}"
+    return _complete_note(client, model_name, prompt)
 
 
 def _normalize_note(note: VoiceNote) -> VoiceNote:

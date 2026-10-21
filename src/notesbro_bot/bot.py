@@ -5,8 +5,7 @@ import logging
 import time
 from io import BytesIO
 
-from google import genai
-from google.genai import types
+from openai import OpenAI
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -28,7 +27,7 @@ from notesbro_bot.note_summary import (
 
 LOGGER = logging.getLogger(__name__)
 
-_GEMINI_RETRIES = 3
+_API_RETRIES = 3
 
 _ACCESS_CLOSED_TEXT = (
     "This bot is not accepting new users. If you should have access, ask the "
@@ -68,31 +67,32 @@ def _add_voice_arm_expired(user_data: dict) -> bool:
     return time.monotonic() > float(deadline)
 
 
+def _audio_file(audio: bytes, mime_type: str) -> tuple[str, bytes, str]:
+    mime = (mime_type or "audio/ogg").split(";", 1)[0].strip().lower()
+    if not mime:
+        mime = "audio/ogg"
+    ext = "mp3" if mime == "audio/mpeg" else mime.rsplit("/", 1)[-1]
+    return (f"voice.{ext}", audio, mime)
+
+
 def transcribe_voice_sync(
-    client: genai.Client,
-    model_name: str,
+    client: OpenAI,
+    model: str,
     audio: bytes,
     mime_type: str,
 ) -> str:
-    import time as _time
-
-    for attempt in range(1, _GEMINI_RETRIES + 1):
+    audio_file = _audio_file(audio, mime_type)
+    for attempt in range(1, _API_RETRIES + 1):
         try:
-            response = client.models.generate_content(
-                model=model_name,
-                contents=[
-                    (
-                        "Transcribe this speech accurately. "
-                        "Reply with only the transcribed words, "
-                        "no labels or commentary."
-                    ),
-                    types.Part.from_bytes(data=audio, mime_type=mime_type),
-                ],
+            transcript = client.audio.transcriptions.create(
+                model=model,
+                file=audio_file,
+                language="ru",
             )
-            return (response.text or "").strip()
+            return (transcript.text or "").strip()
         except Exception:
-            if attempt < _GEMINI_RETRIES:
-                _time.sleep(0.8 * attempt)
+            if attempt < _API_RETRIES:
+                time.sleep(0.8 * attempt)
                 continue
             raise
 
@@ -138,7 +138,7 @@ async def cmd_start(
     )
     if update.message:
         await update.message.reply_text(
-            "Send a voice message. I will transcribe it with Gemini, then "
+            "Send a voice message. I will transcribe it, then "
             "reply "
             "with summarized notes: a note title, a list heading, and bullet "
             "points.\n\n"
@@ -248,7 +248,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     settings: Settings = context.bot_data["settings"]
-    client: genai.Client = context.bot_data["genai_client"]
+    client: OpenAI = context.bot_data["ai_client"]
     chat_id = update.effective_chat.id
     ud = context.user_data or {}
 
@@ -313,12 +313,12 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         transcript = await asyncio.to_thread(
             transcribe_voice_sync,
             client,
-            settings.model_name,
+            settings.stt_model,
             audio,
             mime,
         )
     except Exception as e:
-        LOGGER.exception("Gemini transcription failed")
+        LOGGER.exception("Transcription failed")
         if status is not None:
             await status.edit_text(f"Transcription failed: {e}")
         elif merge and add_status_message_id is not None:
@@ -373,7 +373,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 transcript,
             )
     except Exception as e:
-        LOGGER.exception("Gemini note step failed")
+        LOGGER.exception("Note step failed")
         if status is not None:
             await status.edit_text(f"Could not build notes: {e}")
         elif merge and add_status_message_id is not None:
@@ -429,7 +429,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 
 def build_application(settings: Settings) -> Application:
-    client = genai.Client(api_key=settings.api_key)
+    client = OpenAI(
+        api_key=settings.api_key,
+        base_url=settings.base_url,
+        max_retries=0,
+    )
     repository = NoteRepository(settings.database_path)
     application = (
         Application.builder()
@@ -439,7 +443,7 @@ def build_application(settings: Settings) -> Application:
         .build()
     )
     application.bot_data["settings"] = settings
-    application.bot_data["genai_client"] = client
+    application.bot_data["ai_client"] = client
     application.bot_data["repository"] = repository
 
     application.add_handler(CommandHandler("start", cmd_start))

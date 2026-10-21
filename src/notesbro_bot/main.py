@@ -23,7 +23,7 @@ def main() -> None:
     log = logging.getLogger(__name__)
 
     parser = argparse.ArgumentParser(
-        description="Run NotesBro Telegram bot (voice → Gemini transcript).",
+        description="Run NotesBro Telegram bot (voice → transcript → notes).",
     )
     parser.add_argument(
         "--config",
@@ -39,7 +39,11 @@ def main() -> None:
         sys.exit(1)
 
     application = build_application(settings)
-    log.info("Starting bot (model=%s)", settings.model_name)
+    log.info(
+        "Starting bot (stt=%s chat=%s)",
+        settings.stt_model,
+        settings.model_name,
+    )
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 

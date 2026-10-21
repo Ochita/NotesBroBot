@@ -1,6 +1,11 @@
 telegram_bot_token: "your-telegram-bot-token"
-api_key: "your-gemini-api-key"
-model_name: "gemini-3.1-flash-lite-preview"
+# OpenAI-compatible endpoint. Default host is AITunnel.
+base_url: "https://api.aitunnel.ru/v1/"
+api_key: "your-api-key"
+# Speech → text.
+stt_model: "voxtral-small-24b-2507-stt"
+# Transcript → note.
+model_name: "deepseek-v4-flash"
 
 # Persist whitelist DB in the sqlite database file.
 database_path: "notesbro.sqlite3"

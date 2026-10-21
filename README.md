@@ -1,13 +1,13 @@
 # NotesBroBot
 
 Telegram bot that accepts voice messages and turns them into summarized, formatted
-notes using Gemini (speech-to-text + structured note extraction).
+notes using an OpenAI-compatible endpoint (speech-to-text + structured notes).
 
 ## What it does
 
 - User subscribes with `/start` (optional whitelist/registration blocking supported)
 - User sends a voice message
-- Bot transcribes audio via Gemini
+- Bot transcribes audio via `/audio/transcriptions` (`stt_model`, Russian)
 - Bot converts the transcript into a structured note:
   - `note_title`
   - `list_title`
@@ -54,8 +54,10 @@ cp config/settings.example.yaml config/settings.yaml
 
 Edit `config/settings.yaml` with your secrets:
 - `telegram_bot_token`
-- `api_key` (Gemini API key)
-- `model_name` (Gemini model id)
+- `api_key` (key for the OpenAI-compatible endpoint)
+- `base_url` (optional, default `https://api.aitunnel.ru/v1/`)
+- `stt_model` (speech model; default `voxtral-small-24b-2507-stt`)
+- `model_name` (chat model; default `deepseek-v4-flash`, turns the transcript into a note)
 
 ## Run
 
@@ -80,7 +82,7 @@ cp config/settings.docker.example.yaml config/settings.yaml
 Edit `config/settings.yaml` and set:
 - `telegram_bot_token`
 - `api_key`
-- `model_name`
+- `stt_model` and `model_name`
 - optionally `allow_new_users`
 
 2. Build image:
@@ -124,7 +126,7 @@ docker compose down
 
 - Config is read from YAML via `yaml.safe_load` (no `.env` loading).
 - The bot uses SQLite only for user whitelist/registration (`allow_new_users`).
-- Gemini requests retry up to 3 times for transient failures.
+- API requests retry up to 3 times for transient failures.
 - `/add` works without storing message ids in the database:
   it parses the replied note message and edits that message via Telegram API.
 
