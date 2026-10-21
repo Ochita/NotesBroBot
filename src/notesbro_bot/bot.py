@@ -138,9 +138,8 @@ async def cmd_start(
     )
     if update.message:
         await update.message.reply_text(
-            "Send a voice message. I will transcribe it, then "
-            "reply "
-            "with summarized notes: a note title, a list heading, and bullet "
+            "Send a voice message. I will transcribe it and reply with "
+            "summarized notes: a note title, a list heading, and bullet "
             "points.\n\n"
             "To extend a note: reply /add to the note message you want to "
             "update, then send your next voice message within two minutes. "
