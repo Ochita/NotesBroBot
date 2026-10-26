@@ -27,20 +27,36 @@ class FakeVoice:
 
 
 @dataclass
+class FakeCallbackQuery:
+    data: str | None = None
+    message: FakeMessage | None = None
+    answered: bool = False
+
+    async def answer(self, **kwargs) -> None:
+        _ = kwargs
+        self.answered = True
+
+
+@dataclass
 class FakeMessage:
     message_id: int = 1
+    chat_id: int = CHAT_ID
     text: str | None = None
     voice: FakeVoice | None = None
     reply_to_message: FakeMessage | None = None
     replies: list[str] = field(default_factory=list)
     edits: list[tuple[str, dict]] = field(default_factory=list)
+    markups: list[object] = field(default_factory=list)
 
     async def reply_text(self, text: str, **kwargs):
         self.replies.append(text)
+        if kwargs.get("reply_markup") is not None:
+            self.markups.append(kwargs["reply_markup"])
         return type(self)(
             message_id=self.message_id + 1,
             replies=self.replies,
             edits=self.edits,
+            markups=self.markups,
         )
 
     async def edit_text(self, text: str, **kwargs):

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 from fakes import (
     FakeBot,
+    FakeCallbackQuery,
     FakeContext,
     FakeMessage,
     FakeRepository,
@@ -21,6 +22,7 @@ from notesbro_bot.bot import (
     _UD_ADD_PREVIOUS_NOTE_JSON,
     _UD_ADD_TARGET_MESSAGE_ID,
     _UD_AWAITING_ADD_VOICE,
+    _item_keyboard,
     _locale_code,
     _post_init,
     _show_status,
@@ -31,6 +33,7 @@ from notesbro_bot.bot import (
     cmd_help,
     cmd_set_locale,
     cmd_start,
+    on_edit_select,
     on_edit_text,
     on_voice,
     transcribe_voice_sync,
@@ -764,3 +767,75 @@ async def test_edit_invalid_input_does_not_resend_prompt(edit_context) -> None:
     # hint is edited in place, not posted again
     assert follow_up.replies == []
     assert status.edits[-1][0].startswith("No valid edits")
+
+
+def test_item_keyboard_has_one_button_per_item_and_pages() -> None:
+    note = VoiceNote(
+        note_title="T", list_title="L", items=[f"i{n}" for n in range(7)]
+    )
+    keyboard = _item_keyboard(note)
+    rows = keyboard.inline_keyboard
+    assert [[b.text for b in row] for row in rows] == [
+        ["1", "2", "3", "4", "5"],
+        ["6", "7"],
+    ]
+    assert rows[0][1].callback_data == "ed:2"
+
+
+async def test_tap_selects_item_then_plain_text_replaces_it(
+    edit_context,
+) -> None:
+    await _arm_edit(edit_context)
+    note = VoiceNote(note_title="T", list_title="L", items=["a"])
+    query = FakeCallbackQuery(data="ed:1", message=FakeMessage(message_id=99))
+    edit_context.user_data["edit_previous_note_json"] = (
+        note.model_dump_json()
+    )
+    edit_update = make_update(message=None)
+    edit_update.callback_query = query
+    await on_edit_select(edit_update, edit_context)
+    assert query.answered is True
+    assert edit_context.user_data["edit_selected_item"] == 0
+
+    # bare text now replaces item 1 without retyping "1 "
+    follow_up = FakeMessage(message_id=7, text="plain replacement")
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    edited = edit_context.bot.edited[-1]
+    assert "plain replacement" in edited["text"]
+    assert follow_up.replies[-1].startswith("Note updated")
+
+
+async def test_tap_on_expired_session_reports_it(edit_context) -> None:
+    edit_context.user_data["awaiting_edit"] = True
+    edit_context.user_data["awaiting_edit_deadline_mono"] = 0.0
+    query = FakeCallbackQuery(data="ed:1", message=FakeMessage(message_id=99))
+    edit_update = make_update(message=None)
+    edit_update.callback_query = query
+    await on_edit_select(edit_update, edit_context)
+    assert edit_context.bot.edited[-1]["text"].startswith(
+        "This edit session expired"
+    )
+
+
+async def test_tap_out_of_range_reports_nothing_to_edit(edit_context) -> None:
+    edit_context.user_data.update(
+        {
+            "awaiting_edit": True,
+            "awaiting_edit_deadline_mono": time.monotonic() + 60,
+            "edit_previous_note_json": NOTE.model_dump_json(),
+        }
+    )
+    query = FakeCallbackQuery(data="ed:9", message=FakeMessage(message_id=99))
+    edit_update = make_update(message=None)
+    edit_update.callback_query = query
+    await on_edit_select(edit_update, edit_context)
+    assert edit_context.bot.edited[-1]["text"].startswith("No valid edits")
+
+
+async def test_cmd_edit_attaches_item_buttons(edit_context) -> None:
+    message = FakeMessage(
+        reply_to_message=FakeMessage(message_id=55, text=NOTE_TEXT)
+    )
+    await cmd_edit(make_update(message=message), edit_context)
+    keyboard = message.markups[-1]
+    assert [b.text for b in keyboard.inline_keyboard[0]] == ["1"]

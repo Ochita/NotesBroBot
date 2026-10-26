@@ -22,8 +22,9 @@ notes using an OpenAI-compatible endpoint (speech-to-text + structured notes).
   - bot merges the new transcript into the note and edits the original message
 - User can fix a mis-transcribed note without retyping it:
   - reply `/edit` to the note message
-  - bot replies with the numbered items
-  - send only the lines that change, one per line:
+  - bot replies with the numbered items and a button per item
+  - tap a number, then send just the new text for that item
+  - or send only the lines that change, one per line:
     - `2 new text` replaces item 2, `-2` deletes it, `+ text` appends
     - `t new title`, `l new heading` rewrite the headings
   - bot rewrites the original message and confirms

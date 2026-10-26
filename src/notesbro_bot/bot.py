@@ -6,10 +6,16 @@ import time
 from io import BytesIO
 
 from openai import OpenAI
-from telegram import Message, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message,
+    Update,
+)
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
+    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -21,6 +27,7 @@ from notesbro_bot.db import NoteRepository
 from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
+    _parse_item_number,
     apply_note_edits,
     merge_transcript_into_note_sync,
     parse_voice_note_from_message_text,
@@ -48,6 +55,7 @@ _UD_EDIT_DEADLINE_MONO = "awaiting_edit_deadline_mono"
 _UD_EDIT_TARGET_MESSAGE_ID = "edit_target_message_id"
 _UD_EDIT_PREVIOUS_NOTE_JSON = "edit_previous_note_json"
 _UD_EDIT_STATUS_MESSAGE_ID = "edit_status_message_id"
+_UD_EDIT_SELECTED_ITEM = "edit_selected_item"
 
 _EDIT_TTL_SEC = 300.0
 
@@ -71,6 +79,7 @@ def _disarm_edit(user_data: dict) -> None:
     user_data.pop(_UD_EDIT_TARGET_MESSAGE_ID, None)
     user_data.pop(_UD_EDIT_PREVIOUS_NOTE_JSON, None)
     user_data.pop(_UD_EDIT_STATUS_MESSAGE_ID, None)
+    user_data.pop(_UD_EDIT_SELECTED_ITEM, None)
 
 
 def _edit_arm_expired(user_data: dict) -> bool:
@@ -312,12 +321,15 @@ async def _safe_edit_message(
     chat_id: int,
     message_id: int,
     text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
+    kwargs = {"reply_markup": reply_markup} if reply_markup else {}
     try:
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
+            **kwargs,
         )
     except Exception:
         # Message could be too old to edit or already deleted. No-op.
@@ -378,9 +390,68 @@ async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     ud[_UD_EDIT_TARGET_MESSAGE_ID] = int(target.message_id)
     ud[_UD_EDIT_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
     status = await update.message.reply_text(
-        _number_lines(previous) + "\n\n" + translate(locale, "edit_prompt")
+        _number_lines(previous) + "\n\n" + translate(locale, "edit_prompt"),
+        reply_markup=_item_keyboard(previous),
     )
     ud[_UD_EDIT_STATUS_MESSAGE_ID] = int(status.message_id)
+
+
+def _item_keyboard(note: VoiceNote) -> InlineKeyboardMarkup:
+    """One button per item: tapping arms it for a plain-text replace."""
+    buttons = [
+        InlineKeyboardButton(str(number), callback_data=f"ed:{number}")
+        for number in range(1, len(note.items) + 1)
+    ]
+    return InlineKeyboardMarkup(
+        [buttons[i : i + 5] for i in range(0, len(buttons), 5)]
+    )
+
+
+async def on_edit_select(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """User tapped an item number: next plain text replaces just that item."""
+    query = update.callback_query
+    if query is None or query.data is None:
+        return
+    ud = context.user_data or {}
+    locale = await _locale_code(update, context)
+    if query.message is not None:
+        await query.answer()
+    if not ud.get(_UD_AWAITING_EDIT) or _edit_arm_expired(ud):
+        if query.message is not None:
+            await _safe_edit_message(
+                context,
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
+                text=translate(locale, "edit_expired"),
+            )
+        return
+    previous = _load_note(ud.get(_UD_EDIT_PREVIOUS_NOTE_JSON))
+    index = _parse_item_number(query.data.split(":", 1)[-1])
+    if previous is None or index is None or index >= len(previous.items):
+        if query.message is not None:
+            await _safe_edit_message(
+                context,
+                chat_id=query.message.chat_id,
+                message_id=query.message.message_id,
+                text=translate(locale, "edit_nothing"),
+            )
+        return
+    ud[_UD_EDIT_SELECTED_ITEM] = index
+    if query.message is not None:
+        await _safe_edit_message(
+            context,
+            chat_id=query.message.chat_id,
+            message_id=query.message.message_id,
+            text=translate(
+                locale,
+                "edit_selected",
+                number=str(index + 1),
+                current=previous.items[index],
+            ),
+            reply_markup=_item_keyboard(previous),
+        )
 
 
 async def on_edit_text(
@@ -398,6 +469,8 @@ async def on_edit_text(
     target_message_id = ud.get(_UD_EDIT_TARGET_MESSAGE_ID)
     status_message_id = ud.get(_UD_EDIT_STATUS_MESSAGE_ID)
     previous = _load_note(ud.get(_UD_EDIT_PREVIOUS_NOTE_JSON))
+    # A tapped item number means the raw text is the replacement for it.
+    selected = ud.get(_UD_EDIT_SELECTED_ITEM)
     _disarm_edit(ud)
     if target_message_id is None or previous is None:
         return
@@ -419,7 +492,13 @@ async def on_edit_text(
         else:
             await update.message.reply_text(text)
 
-    edited, applied = apply_note_edits(previous, update.message.text)
+    raw = update.message.text
+    if isinstance(selected, int) and not raw.lstrip().startswith(("+", "-")):
+        # Tapped a button: the whole message is the new text for that item.
+        if raw.strip():
+            raw = f"{selected + 1} {raw.strip()}"
+
+    edited, applied = apply_note_edits(previous, raw)
     if not applied:
         await notify("edit_nothing")
         return
@@ -636,6 +715,9 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("edit", cmd_edit))
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(MessageHandler(filters.VOICE, on_voice))
+    application.add_handler(
+        CallbackQueryHandler(on_edit_select, pattern=r"^ed:\d+$")
+    )
     application.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, on_edit_text)
     )
