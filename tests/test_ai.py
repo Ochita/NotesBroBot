@@ -20,11 +20,15 @@ def test_transcribe_voice_sync_uses_aitunnel_stt() -> None:
         audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))
     )
     text = transcribe_voice_sync(
-        client, "voxtral-small-24b-2507-stt", b"abc", "audio/ogg"
+        client,
+        "voxtral-small-24b-2507-stt",
+        b"abc",
+        "audio/ogg",
+        "ru",
     )
     assert text == "привет"
     assert seen["model"] == "voxtral-small-24b-2507-stt"
-    assert "language" not in seen
+    assert seen["language"] == "ru"
     assert seen["file"] == ("voice.ogg", b"abc", "audio/ogg")
 
 

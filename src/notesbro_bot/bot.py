@@ -77,15 +77,16 @@ def transcribe_voice_sync(
     model: str,
     audio: bytes,
     mime_type: str,
+    language: str | None = None,
 ) -> str:
-    """Transcribe audio. No ``language`` hint: the model auto-detects it."""
+    """Transcribe audio, hinting the user's locale as the spoken language."""
     audio_file = _audio_file(audio, mime_type)
     for attempt in range(1, _API_RETRIES + 1):
         try:
-            transcript = client.audio.transcriptions.create(
-                model=model,
-                file=audio_file,
-            )
+            kwargs: dict = {"model": model, "file": audio_file}
+            if language:
+                kwargs["language"] = language
+            transcript = client.audio.transcriptions.create(**kwargs)
             return (transcript.text or "").strip()
         except Exception:
             if attempt < _API_RETRIES:
@@ -385,6 +386,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             settings.stt_model,
             audio,
             mime,
+            locale,
         )
     except Exception as e:
         LOGGER.exception("Transcription failed")

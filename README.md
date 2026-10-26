@@ -7,8 +7,8 @@ notes using an OpenAI-compatible endpoint (speech-to-text + structured notes).
 
 - User subscribes with `/start` (optional whitelist/registration blocking supported)
 - User sends a voice message
-- Bot transcribes audio via `/audio/transcriptions` (`stt_model`, language
-  auto-detected so notes answer in the language you spoke)
+- Bot transcribes audio via `/audio/transcriptions` (`stt_model`), passing the
+  user's current locale as the `language` hint
 - Bot converts the transcript into a structured note:
   - `note_title`
   - `list_title`

@@ -281,7 +281,7 @@ async def test_on_voice_happy_path() -> None:
     assert message.replies[0] == "Transcribing…"
     assert message.edits[-1][0] == NOTE_TEXT
     assert message.edits[-1][1] == {"parse_mode": "HTML"}
-    assert "language" not in client.stt_calls[0]
+    assert client.stt_calls[0]["language"] == "en"
     assert "language of the transcript" in (
         client.chat_calls[0]["messages"][0]["content"]
     )
@@ -436,6 +436,27 @@ def test_transcribe_omits_language_hint_when_absent() -> None:
     client = FakeClient()
     assert transcribe_voice_sync(client, "m", b"a", "audio/ogg") == "hello"
     assert "language" not in client.stt_calls[0]
+
+
+async def test_stt_language_follows_user_locale() -> None:
+    repository = FakeRepository()
+    repository.locales[42] = "de"
+    client = FakeClient()
+    context = FakeContext(client=client, repository=repository)
+    message = FakeMessage(voice=FakeVoice())
+    await on_voice(make_update(message=message), context)
+    assert client.stt_calls[0]["language"] == "de"
+
+
+async def test_stt_language_follows_telegram_language_code() -> None:
+    client = FakeClient()
+    context = FakeContext(client=client)
+    update = make_update(
+        message=FakeMessage(voice=FakeVoice()),
+        user=FakeUser(language_code="it-IT"),
+    )
+    await on_voice(update, context)
+    assert client.stt_calls[0]["language"] == "it"
 
 
 def test_transcribe_strips_and_defaults_mime() -> None:
