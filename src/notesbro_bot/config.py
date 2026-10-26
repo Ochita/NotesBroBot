@@ -43,8 +43,8 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
     if not isinstance(data, dict):
         raise ValueError("Config must be a YAML mapping at the top level.")
 
-    token = _required(data, "telegram_bot_token")
-    api_key = _required(data, "api_key")
+    token = str(data.get("telegram_bot_token", "")).strip()
+    api_key = str(data.get("api_key", "")).strip()
     if not token:
         raise ValueError("Missing telegram_bot_token in YAML config.")
     if not api_key:
@@ -52,12 +52,19 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
 
     stt_model = _model_id(data, "stt_model", _DEFAULT_STT_MODEL)
     model_name = _model_id(data, "model_name", _DEFAULT_MODEL_NAME)
-    base_url = _base_url(data)
+    base_url = str(data.get("base_url", _DEFAULT_BASE_URL)).strip()
+    if not base_url:
+        raise ValueError("base_url cannot be empty in YAML config.")
     database_path = str(data.get("database_path", "notesbro.sqlite3")).strip()
     if not database_path:
         raise ValueError("database_path cannot be empty in YAML config.")
 
-    default_locale = _default_locale(data)
+    default_locale = (
+        str(data.get("default_locale", "en")).strip().lower()
+    ).split("-", maxsplit=1)[0]
+    if default_locale not in supported_locales():
+        known = ", ".join(sorted(supported_locales()))
+        raise ValueError(f"default_locale must be one of: {known}.")
 
     allow_new_users = data.get("allow_new_users", True)
     if not isinstance(allow_new_users, bool):
@@ -77,19 +84,6 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
     )
 
 
-def _required(data: dict, key: str) -> str:
-    value = data.get(key, "")
-    return str(value).strip()
-
-
-def _base_url(data: dict) -> str:
-    raw = data.get("base_url", _DEFAULT_BASE_URL)
-    url = str(raw).strip()
-    if not url:
-        raise ValueError("base_url cannot be empty in YAML config.")
-    return url
-
-
 def _model_id(data: dict, key: str, default: str) -> str:
     raw = data.get(key, default)
     if isinstance(raw, list):
@@ -98,12 +92,3 @@ def _model_id(data: dict, key: str, default: str) -> str:
     if not model:
         raise ValueError(f"Missing {key} in YAML config.")
     return model
-
-
-def _default_locale(data: dict) -> str:
-    raw = data.get("default_locale", "en")
-    locale = str(raw).strip().lower().split("-", maxsplit=1)[0]
-    if locale not in supported_locales():
-        known = ", ".join(sorted(supported_locales()))
-        raise ValueError(f"default_locale must be one of: {known}.")
-    return locale

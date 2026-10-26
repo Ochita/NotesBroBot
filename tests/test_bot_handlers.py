@@ -19,7 +19,6 @@ from notesbro_bot.bot import (
     MODE_EDIT,
     _locale_code,
     _post_init,
-    _show_status,
     build_application,
     cmd_add,
     cmd_cancel,
@@ -345,18 +344,6 @@ async def test_locale_code_without_user() -> None:
     update = make_update()
     update.effective_user = None
     assert await _locale_code(update, context) == "en"
-
-
-async def test_show_status_without_any_target() -> None:
-    context = FakeContext()
-    await _show_status(
-        context,
-        chat_id=1,
-        reply_message=None,
-        edit_message_id=None,
-        text="x",
-    )
-    assert context.bot.edited == []
 
 
 @pytest.mark.parametrize(

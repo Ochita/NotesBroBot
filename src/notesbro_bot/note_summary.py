@@ -3,7 +3,8 @@ from __future__ import annotations
 import html
 import logging
 import time
-from typing import TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING, TypeVar
 
 from notesbro_bot.i18n import translate
 from notesbro_bot.models import VoiceNote
@@ -13,36 +14,47 @@ if TYPE_CHECKING:
 
 LOGGER = logging.getLogger(__name__)
 
+T = TypeVar("T")
+
 _API_RETRIES = 3
 _MAX_ITEMS = 16
 _MAX_ITEM_CHARS = 200
 
+def _retry(call: Callable[[], T]) -> T:
+    """Run ``call`` up to ``_API_RETRIES`` times, backing off between tries."""
+    for attempt in range(1, _API_RETRIES + 1):
+        try:
+            return call()
+        except Exception:
+            if attempt == _API_RETRIES:
+                raise
+            time.sleep(0.8 * attempt)
+    raise AssertionError("unreachable")
+
+
 def _complete_note(
     client: "OpenAI", model: str, prompt: str, locale: str
 ) -> VoiceNote:
-    for attempt in range(1, _API_RETRIES + 1):
-        try:
-            response = client.chat.completions.parse(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format=VoiceNote,
+    def once() -> VoiceNote:
+        response = client.chat.completions.parse(
+            model=model,
+            messages=[{"role": "user", "content": prompt}],
+            response_format=VoiceNote,
+        )
+        message = response.choices[0].message
+        parsed = message.parsed
+        if isinstance(parsed, VoiceNote):
+            return _normalize_note(parsed, locale)
+        text = (message.content or "").strip()
+        if text:
+            return _normalize_note(
+                VoiceNote.model_validate_json(text), locale
             )
-            message = response.choices[0].message
-            parsed = message.parsed
-            if isinstance(parsed, VoiceNote):
-                return _normalize_note(parsed, locale)
-            text = (message.content or "").strip()
-            if text:
-                return _normalize_note(
-                    VoiceNote.model_validate_json(text), locale
-                )
-            LOGGER.warning("Structured note response empty.")
-            raise ValueError("Model returned no structured note.")
-        except Exception:
-            if attempt < _API_RETRIES:
-                time.sleep(0.8 * attempt)
-                continue
-            raise
+        LOGGER.warning("Structured note response empty.")
+        raise ValueError("Model returned no structured note.")
+
+    # The empty-response ValueError is retried too, hence the inner function.
+    return _retry(once)
 
 
 _SUMMARY_INSTRUCTION = """Turn a raw speech transcript into structured notes.
@@ -97,10 +109,12 @@ def _normalize_note(note: VoiceNote, locale: str | None = None) -> VoiceNote:
     items = [s.strip() for s in note.items if s.strip()]
     if not items:
         items = [translate(locale or "en", "note_no_items")]
-    return VoiceNote(
-        note_title=title,
-        list_title=list_heading,
-        items=items,
+    return note.model_copy(
+        update={
+            "note_title": title,
+            "list_title": list_heading,
+            "items": items,
+        }
     )
 
 
@@ -124,11 +138,7 @@ def add_item(note: VoiceNote, text: str) -> VoiceNote | None:
     item = " ".join(text.split())
     if not item or len(note.items) >= _MAX_ITEMS:
         return None
-    return VoiceNote(
-        note_title=note.note_title,
-        list_title=note.list_title,
-        items=[*note.items, item],
-    )
+    return note.model_copy(update={"items": [*note.items, item]})
 
 
 def replace_quoted_text(
@@ -153,11 +163,7 @@ def replace_quoted_text(
         return None
     items = list(note.items)
     items[index] = updated[:_MAX_ITEM_CHARS]
-    return VoiceNote(
-        note_title=note.note_title,
-        list_title=note.list_title,
-        items=items,
-    )
+    return note.model_copy(update={"items": items})
 
 
 def _replace_once(item: str, needle: str, replacement: str) -> str:
@@ -212,16 +218,8 @@ def parse_voice_note_from_message_text(text: str) -> VoiceNote | None:
     """
     if not text:
         return None
-    # Remove simple HTML tags we produce (<b>...</b>).
-    scrubbed = (
-        text.replace("<b>", "")
-        .replace("</b>", "")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&#x27;", "'")
-        .replace("&quot;", "\"")
-    )
+    # Remove the tags we emit, then decode the entities they escaped.
+    scrubbed = html.unescape(text.replace("<b>", "").replace("</b>", ""))
     lines = [ln.strip() for ln in scrubbed.splitlines() if ln.strip()]
     if not lines:
         return None

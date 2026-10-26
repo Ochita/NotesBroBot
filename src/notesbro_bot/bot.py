@@ -21,6 +21,7 @@ from notesbro_bot.db import NoteRepository
 from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
+    _retry,
     add_item,
     parse_voice_note_from_message_text,
     replace_quoted_text,
@@ -94,18 +95,13 @@ def transcribe_voice_sync(
 ) -> str:
     """Transcribe audio, hinting the user's locale as the spoken language."""
     audio_file = _audio_file(audio, mime_type)
-    for attempt in range(1, _API_RETRIES + 1):
-        try:
-            kwargs: dict = {"model": model, "file": audio_file}
-            if language:
-                kwargs["language"] = language
-            transcript = client.audio.transcriptions.create(**kwargs)
-            return (transcript.text or "").strip()
-        except Exception:
-            if attempt < _API_RETRIES:
-                time.sleep(0.8 * attempt)
-                continue
-            raise
+    kwargs: dict = {"model": model, "file": audio_file}
+    if language:
+        kwargs["language"] = language
+    transcript = _retry(
+        lambda: client.audio.transcriptions.create(**kwargs)
+    )
+    return (transcript.text or "").strip()
 
 
 async def _locale_code(
@@ -145,6 +141,18 @@ async def _is_access_denied(
     return True
 
 
+async def _guard(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> str | None:
+    """Resolve the locale and enforce the whitelist. ``None`` means stop."""
+    if update.effective_user is None or update.effective_chat is None:
+        return None
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
+        return None
+    return locale
+
+
 async def _post_init(application: Application) -> None:
     repository: NoteRepository = application.bot_data["repository"]
     await repository.init()
@@ -154,10 +162,8 @@ async def _post_init(application: Application) -> None:
 async def cmd_start(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    if update.effective_user is None or update.effective_chat is None:
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None:
         return
     repository: NoteRepository = context.application.bot_data["repository"]
     await repository.upsert_user(
@@ -169,10 +175,8 @@ async def cmd_start(
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.effective_user is None or update.effective_chat is None:
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None:
         return
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
@@ -183,10 +187,8 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cmd_set_locale(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    if update.effective_user is None or update.effective_chat is None:
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None:
         return
     chat_id = update.effective_chat.id
     args = context.args or []
@@ -324,14 +326,8 @@ async def _apply_text(
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if (
-        update.effective_user is None
-        or update.effective_chat is None
-        or update.message is None
-    ):
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None or update.message is None:
         return
     await _arm_or_apply_text(
         update,
@@ -367,10 +363,8 @@ async def _push_note(
 async def cmd_cancel(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> None:
-    if update.effective_user is None or update.message is None:
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None or update.message is None:
         return
     ud = context.user_data
     if ud is None:
@@ -379,17 +373,12 @@ async def cmd_cancel(
     await update.message.reply_text(translate(locale, key))
 
 
-async def _safe_delete_message(
-    context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int
-) -> None:
+async def _quiet(coro, what: str) -> None:
+    """Await a best-effort Telegram call: stale or deleted messages no-op."""
     try:
-        await context.bot.delete_message(
-            chat_id=chat_id, message_id=message_id
-        )
+        await coro
     except Exception:
-        LOGGER.debug(
-            "Could not delete message %s in chat %s", message_id, chat_id
-        )
+        LOGGER.debug("Could not %s", what)
 
 
 async def _safe_edit_message(
@@ -399,51 +388,27 @@ async def _safe_edit_message(
     message_id: int,
     text: str,
 ) -> None:
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=message_id,
-            text=text,
-        )
-    except Exception:
-        # Message could be too old to edit or already deleted. No-op.
-        LOGGER.debug(
-            "Could not edit message %s in chat %s", message_id, chat_id
-        )
+    await _quiet(
+        context.bot.edit_message_text(
+            chat_id=chat_id, message_id=message_id, text=text
+        ),
+        f"edit message {message_id} in chat {chat_id}",
+    )
 
 
-async def _show_status(
-    context: ContextTypes.DEFAULT_TYPE,
-    *,
-    chat_id: int,
-    reply_message: Message | None,
-    edit_message_id: int | None,
-    text: str,
-    parse_mode: str | None = None,
+async def _safe_delete_message(
+    context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int
 ) -> None:
-    """Update whichever progress message this flow is using."""
-    if reply_message is not None:
-        kwargs = {"parse_mode": parse_mode} if parse_mode else {}
-        await reply_message.edit_text(text, **kwargs)
-    elif edit_message_id is not None:
-        await _safe_edit_message(
-            context,
-            chat_id=chat_id,
-            message_id=int(edit_message_id),
-            text=text,
-        )
+    await _quiet(
+        context.bot.delete_message(chat_id=chat_id, message_id=message_id),
+        f"delete message {message_id} in chat {chat_id}",
+    )
 
 
 async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Replace the quoted fragment; without text the next voice does it."""
-    if (
-        update.effective_user is None
-        or update.effective_chat is None
-        or update.message is None
-    ):
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None or update.message is None:
         return
     await _arm_or_apply_text(
         update,
@@ -470,20 +435,12 @@ def _load_note(raw: object) -> VoiceNote | None:
         return None
 
 
-def _number_lines(note: VoiceNote) -> str:
-    return "\n".join(
-        f"{index}. {item}" for index, item in enumerate(note.items, start=1)
-    )
-
-
 
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.voice:
         return
-    if update.effective_user is None or update.effective_chat is None:
-        return
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
+    locale = await _guard(update, context)
+    if locale is None:
         return
 
     settings: Settings = context.bot_data["settings"]
@@ -500,11 +457,12 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     status_text = (
         "status_transcribing_addon" if armed else "status_transcribing"
     )
-    if armed and pending.get("status_message_id"):
+    pending_status_id = (pending or {}).get("status_message_id")
+    if pending_status_id:
         await _safe_edit_message(
             context,
             chat_id=chat_id,
-            message_id=int(pending["status_message_id"]),
+            message_id=int(pending_status_id),
             text=translate(locale, status_text),
         )
         status: Message | None = None
@@ -514,13 +472,16 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     async def show(text_key: str, **kwargs: str) -> None:
-        await _show_status(
-            context,
-            chat_id=chat_id,
-            reply_message=status,
-            edit_message_id=(pending or {}).get("status_message_id"),
-            text=translate(locale, text_key, **kwargs),
-        )
+        text = translate(locale, text_key, **kwargs)
+        if status is not None:
+            await status.edit_text(text)
+        elif pending_status_id:
+            await _safe_edit_message(
+                context,
+                chat_id=chat_id,
+                message_id=int(pending_status_id),
+                text=text,
+            )
 
     voice = update.message.voice
     mime = voice.mime_type or "audio/ogg"
