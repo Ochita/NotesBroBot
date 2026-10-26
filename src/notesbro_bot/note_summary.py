@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 LOGGER = logging.getLogger(__name__)
 
 _API_RETRIES = 3
+_MAX_ITEMS = 16
+_MAX_ITEM_CHARS = 200
 
 def _complete_note(
     client: "OpenAI", model: str, prompt: str, locale: str
@@ -131,53 +133,60 @@ def voice_note_to_telegram_html(note: VoiceNote, max_len: int = 3900) -> str:
     return body[: max_len - 1] + "…"
 
 
-def apply_note_edits(note: VoiceNote, text: str) -> tuple[VoiceNote, int]:
-    """Apply line-level edits to a note.
-
-    Each non-empty line targets one bullet so nothing has to be retyped:
-    ``2 new text`` replaces, ``-2`` removes, ``+ text`` appends,
-    ``t title`` / ``l heading`` rewrite the headings. Edits apply in order.
-    Returns the note plus the number of applied edits (0 when nothing
-    matched a valid command).
-    """
-    title, heading = note.note_title, note.list_title
-    items = list(note.items)
-    applied = 0
-    for raw in text.splitlines():
-        line = raw.strip()
-        if not line:
-            continue
-        if line.startswith("+") and len(line) > 1:
-            items.append(line[1:].strip())
-            applied += 1
-            continue
-        if line.startswith("-") and len(line) > 1:
-            index = _parse_item_number(line[1:].strip())
-            if index is not None and index < len(items):
-                del items[index]
-                applied += 1
-            continue
-        command, _, value = line.partition(" ")
-        value = value.strip()
-        lowered = command.lower()
-        if lowered in {"t", "title", "l", "list"} and value:
-            if lowered in {"t", "title"}:
-                title = value
-            else:
-                heading = value
-            applied += 1
-            continue
-        index = _parse_item_number(command)
-        if index is None or not value or index >= len(items):
-            continue
-        items[index] = value
-        applied += 1
-    note_out = VoiceNote(
-        note_title=title[:200],
-        list_title=heading[:200],
-        items=items[:16],
+def add_item(note: VoiceNote, text: str) -> VoiceNote | None:
+    """Append one bullet. Returns ``None`` when nothing can be added."""
+    item = " ".join(text.split())
+    if not item or len(note.items) >= _MAX_ITEMS:
+        return None
+    return VoiceNote(
+        note_title=note.note_title,
+        list_title=note.list_title,
+        items=[*note.items, item],
     )
-    return note_out, applied
+
+
+def replace_quoted_text(
+    note: VoiceNote, quote: str | None, new_text: str
+) -> VoiceNote | None:
+    """Swap the quoted fragment of one bullet for ``new_text``.
+
+    The quote is what the user selected in Telegram, so only that part of the
+    line changes and the rest of the wording survives. Returns ``None`` when
+    the quote matches no bullet or nothing would change.
+    """
+    index = find_item_by_quote(note, quote)
+    replacement = " ".join(new_text.split())
+    if index is None or not replacement:
+        return None
+    item = note.items[index]
+    needle = _clean_quoted_keep_case(quote or "")
+    if not needle:
+        return None
+    updated = _replace_once(item, needle, replacement)
+    if updated == item:
+        return None
+    items = list(note.items)
+    items[index] = updated[:_MAX_ITEM_CHARS]
+    return VoiceNote(
+        note_title=note.note_title,
+        list_title=note.list_title,
+        items=items,
+    )
+
+
+def _replace_once(item: str, needle: str, replacement: str) -> str:
+    position = item.find(needle)
+    if position < 0:
+        # Fall back to a case-insensitive search on the raw text.
+        position = item.lower().find(needle.lower())
+    if position < 0:
+        return item
+    return item[:position] + replacement + item[position + len(needle) :]
+
+
+def _clean_quoted_keep_case(raw: str) -> str:
+    text = raw.replace("•", " ").replace("📝", " ").replace("📋", " ")
+    return " ".join(text.split())
 
 
 def find_item_by_quote(note: VoiceNote, quote: str | None) -> int | None:
@@ -205,17 +214,7 @@ def find_item_by_quote(note: VoiceNote, quote: str | None) -> int | None:
 
 def _clean_quoted(raw: str) -> str:
     """Drop bullet/heading decoration and collapse whitespace for compare."""
-    text = raw.replace("•", " ").replace("📝", " ").replace("📋", " ")
-    return " ".join(text.split()).casefold()
-
-
-def _parse_item_number(raw: str) -> int | None:
-    """Map a 1-based user-facing bullet number to a 0-based index."""
-    try:
-        number = int(raw)
-    except ValueError:
-        return None
-    return number - 1 if number >= 1 else None
+    return _clean_quoted_keep_case(raw).casefold()
 
 
 def parse_voice_note_from_message_text(text: str) -> VoiceNote | None:

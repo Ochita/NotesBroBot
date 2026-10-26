@@ -1,4 +1,15 @@
 en:
+  need_reply: Reply to the note message you want to change.
+  not_a_note: |-
+    I couldn't parse that replied message as a note. Reply to a note message
+    previously sent by this bot.
+  add_armed: |-
+    OK. Send 1 voice within {ttl}s to append it. /cancel to stop.
+  edit_armed: |-
+    OK. Send 1 voice within {ttl}s and the quoted text gets replaced.
+    /cancel to stop.
+  note_updated: Note updated.
+  note_update_failed: Could not update the note message. Try again.
   access_closed: |-
     This bot is not accepting new users. Only existing users may use it.
   start: |-
@@ -11,43 +22,19 @@ en:
   help: |-
     Commands:
     /start - subscribe and get usage help
-    /add - reply to a note, then send a voice message to merge into it
+    /add <text> - reply to a note to append the text right away;
+    /add alone - reply, then send a voice to merge into it
     /cancel - cancel an armed /add
-    /edit - reply to a note, then send `2 new text` to fix one line
+    /edit <text> - reply to a note, quote a fragment, replace it
     /set_locale <code> - set your language
 
     Notes are written in the language of your voice message.
-  add_need_reply: Reply /add to the note message you want to update.
-  add_not_a_note: |-
-    I couldn't parse that replied message as a note. Reply /add to a note
-    message previously sent by this bot.
-  add_armed: |-
-    OK. Send 1 voice within {ttl}s to merge. Use /cancel to stop.
-  edit_need_reply: Reply /edit to the note message you want to fix.
-  edit_not_a_note: |-
-    I couldn't parse that replied message as a note. Reply /edit to a note
-    message previously sent by this bot.
-  edit_prompt: |-
-    Best: reply to the note with a quote of the line you want to fix and
-    send just the new text for it.
-
-    Or tap an item number below, or send the lines to fix one per line:
-    2 new text - replace item 2
-    -2 - delete item 2
-    + some text - add a new item
-    t new title - replace the note title
-    l new heading - replace the list heading
-
-    /cancel to stop.
-  edit_done: "Note updated. Lines changed: {count}"
-  edit_nothing: |-
-    No valid edits found. Example: `2 corrected text`, `-1`, `+ new item`.
-  edit_same: Note already looks like that; nothing to change.
-  edit_selected: |-
-    Item {number} selected. Send the new text for it.
-    Current: {current}
-  edit_expired: This edit session expired. Send /edit again.
-  edit_cancelled: Edit cancelled.
+  edit_need_quote: |-
+    Select the exact text to replace first: reply to the note, quote the
+    fragment, then send /edit <new text>.
+  edit_quote_miss: |-
+    Could not find "{quoted}" in the note. Quote the exact text to replace.
+  add_full: "The list is full ({count} items). Delete one first."
   cancel_done: Cancelled merge mode.
   cancel_nothing: Nothing to cancel.
   status_transcribing: Transcribing…
@@ -69,6 +56,18 @@ en:
   note_no_items: (No distinct points extracted from the transcript.)
 
 ru:
+  need_reply: Ответьте на сообщение с заметкой, которую хотите изменить.
+  not_a_note: |-
+    Не удалось распознать в этом сообщении заметку. Ответьте на сообщение
+    с заметкой, которое отправлял этот бот.
+  add_armed: |-
+    ОК. Отправьте 1 голосовое в течение {ttl} с, чтобы добавить пункт.
+    /cancel - отменить.
+  edit_armed: |-
+    ОК. Отправьте 1 голосовое в течение {ttl} с — выделенный текст
+    заменится надиктованным. /cancel - отменить.
+  note_updated: Заметка обновлена.
+  note_update_failed: Не удалось обновить сообщение с заметкой. Попробуйте еще раз.
   access_closed: |-
     Бот не принимает новых пользователей. Доступ только у уже зарегистрированных.
   start: |-
@@ -81,46 +80,19 @@ ru:
   help: |-
     Команды:
     /start - подписаться и получить справку
-    /add - ответьте на заметку, затем отправьте голосовое для дополнения
+    /add <текст> - ответьте на заметку, чтобы сразу добавить пункт;
+    /add без текста - ответьте и отправьте голосовое для дополнения
     /cancel - отменить подготовленный /add
-    /edit - ответьте на заметку и пришлите `2 новый текст`, чтобы исправить строку
+    /edit <текст> - ответьте на заметку, выделите фрагмент, замените его
     /set_locale <код> - установить язык
 
     Заметки пишутся на языке вашего голосового сообщения.
-  add_need_reply: Ответьте /add на сообщение с заметкой, которую хотите дополнить.
-  add_not_a_note: |-
-    Не удалось распознать в этом сообщении заметку. Ответьте /add на
-    сообщение с заметкой, которое отправлял этот бот.
-  add_armed: |-
-    ОК. Отправьте 1 голосовое в течение {ttl} с для дополнения.
-    /cancel - отменить.
-  edit_need_reply: Ответьте /edit на сообщение с заметкой, которую хотите исправить.
-  edit_not_a_note: |-
-    Не удалось распознать в этом сообщении заметку. Ответьте /edit на
-    сообщение с заметкой, которое отправлял этот бот.
-  edit_prompt: |-
-    Лучше всего: ответьте на заметку, выделив нужную строку, и пришлите
-    только новый текст для неё.
-
-    Или нажмите номер пункта ниже, или пришлите строки для правки:
-    Меняется только та строка, которую вы указали:
-    2 новый текст - заменить пункт 2
-    -2 - удалить пункт 2
-    + новый пункт - добавить пункт
-    t новый заголовок - заменить заголовок заметки
-    l новый подзаголовок - заменить подзаголовок списка
-
-    /cancel - отменить.
-  edit_done: "Заметка обновлена. Изменено строк: {count}"
-  edit_nothing: |-
-    Не нашел корректных правок. Пример: `2 исправленный текст`, `-1`,
-    `+ новый пункт`.
-  edit_same: В заметке уже так и написано, менять нечего.
-  edit_selected: |-
-    Выбран пункт {number}. Пришлите новый текст для него.
-    Сейчас: {current}
-  edit_expired: Сессия правки истекла. Отправьте /edit заново.
-  edit_cancelled: Правка отменена.
+  edit_need_quote: |-
+    Сначала выделите текст для замены: ответьте на заметку, процитируйте
+    фрагмент и отправьте /edit <новый текст>.
+  edit_quote_miss: |-
+    Не нашел "{quoted}" в заметке. Процитируйте точный текст для замены.
+  add_full: "Список заполнен ({count} пунктов). Сначала удалите один."
   cancel_done: Режим дополнения отменен.
   cancel_nothing: Нечего отменять.
   status_transcribing: Расшифровываю…
@@ -142,6 +114,18 @@ ru:
   note_no_items: (Из расшифровки не удалось выделить отдельные пункты.)
 
 uk:
+  need_reply: Дайте відповідь на повідомлення з нотаткою, яку хочете змінити.
+  not_a_note: |-
+    Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь на
+    повідомлення з нотаткою, яке надсилав цей бот.
+  add_armed: |-
+    Гаразд. Надішліть 1 голосове протягом {ttl} с, щоб додати пункт.
+    /cancel - скасувати.
+  edit_armed: |-
+    Гаразд. Надішліть 1 голосове протягом {ttl} с — виділений текст
+    заміниться продиктованим. /cancel - скасувати.
+  note_updated: Нотатку оновлено.
+  note_update_failed: Не вдалося оновити повідомлення з нотаткою. Спробуйте ще раз.
   access_closed: |-
     Бот не приймає нових користувачів. Доступ лише для вже зареєстрованих.
   start: |-
@@ -156,44 +140,16 @@ uk:
     /start - підписатися та отримати довідку
     /add - відповідайте на нотатку, потім надішліть голосове для доповнення
     /cancel - скасувати підготовлений /add
-    /edit - дайте відповідь на нотатку й надішліть `2 новий текст`, щоб виправити рядок
+    /edit <текст> - дайте відповідь на нотатку, виділіть фрагмент, замініть його
     /set_locale <код> - встановити мову
 
     Нотатки пишуться мовою вашого голосового повідомлення.
-  add_need_reply: Дайте відповідь /add на повідомлення з нотаткою, яку хочете доповнити.
-  add_not_a_note: |-
-    Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь
-    /add на повідомлення з нотаткою, яке надсилав цей бот.
-  add_armed: |-
-    Гаразд. Надішліть 1 голосове протягом {ttl} с для доповнення.
-    /cancel - скасувати.
-  edit_need_reply: Дайте відповідь /edit на повідомлення з нотаткою, яку хочете виправити.
-  edit_not_a_note: |-
-    Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь
-    /edit на повідомлення з нотаткою, яке надсилав цей бот.
-  edit_prompt: |-
-    Найкраще: дайте відповідь на нотатку, виділивши потрібний рядок, і
-    надішліть лише новий текст для нього.
-
-    Або натисніть номер пункту нижче, або надішліть рядки для правки:
-    Змінюється лише той рядок, який ви вказали:
-    2 новий текст - замінити пункт 2
-    -2 - видалити пункт 2
-    + новий пункт - додати пункт
-    t новий заголовок - замінити заголовок нотатки
-    l новий підзаголовок - замінити підзаголовок списку
-
-    /cancel - скасувати.
-  edit_done: "Нотатку оновлено. Змінено рядків: {count}"
-  edit_nothing: |-
-    Не знайшов коректних правок. Приклад: `2 виправлений текст`, `-1`,
-    `+ новий пункт`.
-  edit_same: У нотатці вже так написано, змінювати нічого.
-  edit_selected: |-
-    Вибрано пункт {number}. Надішліть новий текст для нього.
-    Зараз: {current}
-  edit_expired: Сесія правки минула. Надішліть /edit знову.
-  edit_cancelled: Правку скасовано.
+  edit_need_quote: |-
+    Спочатку виділіть текст для заміни: дайте відповідь на нотатку,
+    процитуйте фрагмент і надішліть /edit <новий текст>.
+  edit_quote_miss: |-
+    Не знайшов "{quoted}" у нотатці. Процитуйте точний текст для заміни.
+  add_full: "Список заповнено ({count} пунктів). Спершу видаліть один."
   cancel_done: Режим доповнення скасовано.
   cancel_nothing: Немає що скасовувати.
   status_transcribing: Розшифровую…
@@ -215,6 +171,17 @@ uk:
   note_no_items: (З розшифровки не вдалося виділити окремі пункти.)
 
 it:
+  need_reply: Rispondi al messaggio della nota che vuoi modificare.
+  not_a_note: |-
+    Non riesco a interpretare quel messaggio come una nota. Rispondi a un
+    messaggio di nota inviato da questo bot.
+  add_armed: |-
+    OK. Invia 1 vocale entro {ttl}s per aggiungere il punto. /cancel per fermarti.
+  edit_armed: |-
+    OK. Invia 1 vocale entro {ttl}s e il testo citato verrà sostituito.
+    /cancel per fermarti.
+  note_updated: Nota aggiornata.
+  note_update_failed: Impossibile aggiornare il messaggio della nota. Riprova.
   access_closed: |-
     Il bot non accetta nuovi utenti. Solo gli utenti già registrati possono usarlo.
   start: |-
@@ -227,44 +194,19 @@ it:
   help: |-
     Comandi:
     /start - attiva l'iscrizione e mostra la guida
-    /add - rispondi a una nota, poi invia un vocale da unire
+    /add <testo> - rispondi a una nota per aggiungere il punto;
+    /add da solo - rispondi e invia un vocale da unire
     /cancel - annulla un /add preparato
-    /edit - rispondi a una nota e invia `2 nuovo testo` per correggere una riga
+    /edit <testo> - rispondi a una nota, cita un frammento, sostituiscilo
     /set_locale <codice> - imposta la lingua
 
     Le note sono scritte nella lingua del tuo messaggio vocale.
-  add_need_reply: Rispondi /add al messaggio della nota che vuoi aggiornare.
-  add_not_a_note: |-
-    Non riesco a interpretare quel messaggio come una nota. Rispondi /add
-    a un messaggio di nota inviato da questo bot.
-  add_armed: |-
-    OK. Invia 1 vocale entro {ttl}s per unire. Usa /cancel per fermarti.
-  edit_need_reply: Rispondi /edit al messaggio della nota che vuoi correggere.
-  edit_not_a_note: |-
-    Non riesco a interpretare quel messaggio come una nota. Rispondi /edit
-    a un messaggio di nota inviato da questo bot.
-  edit_prompt: |-
-    Meglio: rispondi alla nota citando la riga da correggere e invia solo
-    il nuovo testo.
-
-    Oppure tocca il numero di un punto, o invia le righe da correggere:
-    2 nuovo testo - sostituisci il punto 2
-    -2 - elimina il punto 2
-    + nuovo punto - aggiungi un punto
-    t nuovo titolo - sostituisci il titolo della nota
-    l nuova intestazione - sostituisci l'intestazione dell'elenco
-
-    /cancel per fermarti.
-  edit_done: "Nota aggiornata. Righe modificate: {count}"
-  edit_nothing: |-
-    Nessuna correzione valida. Esempio: `2 testo corretto`, `-1`,
-    `+ nuovo punto`.
-  edit_same: La nota è già così, niente da cambiare.
-  edit_selected: |-
-    Punto {number} selezionato. Invia il nuovo testo.
-    Attuale: {current}
-  edit_expired: Sessione scaduta. Invia di nuovo /edit.
-  edit_cancelled: Correzione annullata.
+  edit_need_quote: |-
+    Prima seleziona il testo da sostituire: rispondi alla nota, cita il
+    frammento, poi invia /edit <nuovo testo>.
+  edit_quote_miss: |-
+    Non trovo "{quoted}" nella nota. Cita il testo esatto da sostituire.
+  add_full: "La lista è piena ({count} punti). Eliminane uno prima."
   cancel_done: Modalità unione annullata.
   cancel_nothing: Niente da annullare.
   status_transcribing: Trascrivo…
@@ -286,6 +228,18 @@ it:
   note_no_items: (Nessun punto distinto estratto dalla trascrizione.)
 
 fr:
+  need_reply: Répondez au message de la note à modifier.
+  not_a_note: |-
+    Je n'ai pas pu interpréter ce message comme une note. Répondez à un
+    message de note envoyé par ce bot.
+  add_armed: |-
+    OK. Envoyez 1 vocal dans les {ttl}s pour ajouter le point.
+    /cancel pour arrêter.
+  edit_armed: |-
+    OK. Envoyez 1 vocal dans les {ttl}s : le texte cité sera remplacé.
+    /cancel pour arrêter.
+  note_updated: Note mise à jour.
+  note_update_failed: Impossible de mettre à jour la note. Réessayez.
   access_closed: |-
     Ce bot n'accepte pas de nouveaux utilisateurs. Seuls les utilisateurs existants peuvent l'utiliser.
   start: |-
@@ -298,45 +252,19 @@ fr:
   help: |-
     Commandes :
     /start - s'abonner et afficher l'aide
-    /add - répondre à une note, puis envoyer un vocal à fusionner
+    /add <texte> - répondez à une note pour ajouter le point ;
+    /add seul - répondez puis envoyez un vocal à fusionner
     /cancel - annuler un /add préparé
-    /edit - répondez à une note puis envoyez `2 nouveau texte` pour corriger une ligne
+    /edit <texte> - répondez à une note, citez un fragment, remplacez-le
     /set_locale <code> - définir la langue
 
     Les notes sont rédigées dans la langue de votre message vocal.
-  add_need_reply: Répondez /add au message de la note à mettre à jour.
-  add_not_a_note: |-
-    Je n'ai pas pu interpréter ce message comme une note. Répondez /add
-    à un message de note envoyé par ce bot.
-  add_armed: |-
-    OK. Envoyez 1 vocal dans les {ttl}s pour fusionner. /cancel pour arrêter.
-  edit_need_reply: Répondez /edit au message de la note à corriger.
-  edit_not_a_note: |-
-    Je n'ai pas pu interpréter ce message comme une note. Répondez /edit
-    à un message de note envoyé par ce bot.
-  edit_prompt: |-
-    Le mieux : répondez à la note en citant la ligne à corriger et envoyez
-    seulement le nouveau texte.
-
-    Ou touchez un numéro de point, ou envoyez les lignes à corriger :
-    Seule la ligne indiquée change :
-    2 nouveau texte - remplacer le point 2
-    -2 - supprimer le point 2
-    + nouveau point - ajouter un point
-    t nouveau titre - remplacer le titre de la note
-    l nouvel en-tête - remplacer l'en-tête de la liste
-
-    /cancel pour arrêter.
-  edit_done: "Note mise à jour. Lignes modifiées : {count}"
-  edit_nothing: |-
-    Aucune correction valide. Exemple : `2 texte corrigé`, `-1`,
-    `+ nouveau point`.
-  edit_same: La note est déjà ainsi, rien à changer.
-  edit_selected: |-
-    Point {number} sélectionné. Envoyez le nouveau texte.
-    Actuel : {current}
-  edit_expired: Session expirée. Renvoyez /edit.
-  edit_cancelled: Correction annulée.
+  edit_need_quote: |-
+    Sélectionnez d'abord le texte à remplacer : répondez à la note, citez
+    le fragment, puis envoyez /edit <nouveau texte>.
+  edit_quote_miss: |-
+    Je ne trouve pas « {quoted} » dans la note. Citez le texte exact.
+  add_full: "La liste est pleine ({count} points). Supprimez-en un."
   cancel_done: Mode fusion annulé.
   cancel_nothing: Rien à annuler.
   status_transcribing: Transcription…
@@ -358,6 +286,18 @@ fr:
   note_no_items: (Aucun point distinct extrait de la transcription.)
 
 de:
+  need_reply: Antworte auf die Notiznachricht, die du ändern willst.
+  not_a_note: |-
+    Ich konnte diese Nachricht nicht als Notiz lesen. Antworte auf eine
+    Notiznachricht, die dieser Bot gesendet hat.
+  add_armed: |-
+    OK. Sende 1 Sprachnachricht innerhalb von {ttl}s, um den Punkt
+    anzuhängen. /cancel zum Abbrechen.
+  edit_armed: |-
+    OK. Sende 1 Sprachnachricht innerhalb von {ttl}s: der zitierte Text wird
+    ersetzt. /cancel zum Abbrechen.
+  note_updated: Notiz aktualisiert.
+  note_update_failed: Notiznachricht konnte nicht aktualisiert werden.
   access_closed: |-
     Dieser Bot nimmt keine neuen Nutzer an. Nur bestehende Nutzer können ihn verwenden.
   start: |-
@@ -370,46 +310,19 @@ de:
   help: |-
     Befehle:
     /start - Abonnement und Hilfe
-    /add - auf eine Notiz antworten, dann Sprachnachricht zum Ergänzen senden
+    /add <Text> - auf eine Notiz antworten, um den Punkt sofort anzuhängen;
+    /add allein - antworten, dann Sprachnachricht senden
     /cancel - vorbereitetes /add abbrechen
-    /edit - auf eine Notiz antworten, dann `2 neuer Text` zum Korrigieren senden
+    /edit <Text> - auf eine Notiz antworten, Ausschnitt zitieren, ersetzen
     /set_locale <Code> - Sprache festlegen
 
     Notizen werden in der Sprache deiner Sprachnachricht verfasst.
-  add_need_reply: Antworte mit /add auf die Notiznachricht, die du ändern willst.
-  add_not_a_note: |-
-    Ich konnte diese Nachricht nicht als Notiz lesen. Antworte mit /add auf
-    eine Notiznachricht, die dieser Bot gesendet hat.
-  add_armed: |-
-    OK. Sende 1 Sprachnachricht innerhalb von {ttl}s zum Ergänzen.
-    /cancel zum Abbrechen.
-  edit_need_reply: Antworte mit /edit auf die Notiznachricht, die du ändern willst.
-  edit_not_a_note: |-
-    Ich konnte diese Nachricht nicht als Notiz lesen. Antworte mit /edit auf
-    eine Notiznachricht, die dieser Bot gesendet hat.
-  edit_prompt: |-
-    Am besten: antworte auf die Notiz mit einem Zitat der Zeile und sende
-    nur den neuen Text dafür.
-
-    Oder tippe auf eine Punktnummer oder sende die Zeilen einzeln:
-    Nur die genannte Zeile ändert sich:
-    2 neuer Text - Punkt 2 ersetzen
-    -2 - Punkt 2 löschen
-    + neuer Punkt - Punkt hinzufügen
-    t neuer Titel - Titel der Notiz ersetzen
-    l neue Überschrift - Listenüberschrift ersetzen
-
-    /cancel zum Abbrechen.
-  edit_done: "Notiz aktualisiert. Geänderte Zeilen: {count}"
-  edit_nothing: |-
-    Keine gültigen Änderungen gefunden. Beispiel: `2 korrigierter Text`,
-    `-1`, `+ neuer Punkt`.
-  edit_same: Die Notiz sieht schon so aus, nichts zu ändern.
-  edit_selected: |-
-    Punkt {number} gewählt. Sende den neuen Text.
-    Aktuell: {current}
-  edit_expired: Sitzung abgelaufen. Sende /edit erneut.
-  edit_cancelled: Änderung abgebrochen.
+  edit_need_quote: |-
+    Markiere zuerst den zu ersetzenden Text: antworte auf die Notiz,
+    zitiere den Ausschnitt, dann sende /edit <neuer Text>.
+  edit_quote_miss: |-
+    "{quoted}" wurde in der Notiz nicht gefunden. Zitiere den exakten Text.
+  add_full: "Die Liste ist voll ({count} Punkte). Lösche zuerst einen."
   cancel_done: Ergänzungsmodus abgebrochen.
   cancel_nothing: Nichts abzubrechen.
   status_transcribing: Transkribiere…
@@ -431,6 +344,17 @@ de:
   note_no_items: (Keine eigenständigen Punkte aus der Transkription erkannt.)
 
 es:
+  need_reply: Responde al mensaje de la nota que quieres cambiar.
+  not_a_note: |-
+    No pude interpretar ese mensaje como una nota. Responde a un mensaje de
+    nota enviado por este bot.
+  add_armed: |-
+    OK. Envía 1 audio en {ttl}s para añadir el punto. /cancel para parar.
+  edit_armed: |-
+    OK. Envía 1 audio en {ttl}s y el texto citado se reemplazará.
+    /cancel para parar.
+  note_updated: Nota actualizada.
+  note_update_failed: No se pudo actualizar el mensaje de la nota.
   access_closed: |-
     Este bot no acepta usuarios nuevos. Solo pueden usarlo usuarios ya registrados.
   start: |-
@@ -443,45 +367,19 @@ es:
   help: |-
     Comandos:
     /start - suscribirse y ver la ayuda
-    /add - responder a una nota y enviar un audio para unirlo
+    /add <texto> - responde a una nota para añadir el punto;
+    /add solo - responde y envía un audio para unirlo
     /cancel - cancelar un /add preparado
-    /edit - responde a una nota y envía `2 texto nuevo` para corregir una línea
+    /edit <texto> - responde a una nota, cita un fragmento, reemplázalo
     /set_locale <código> - configurar el idioma
 
     Las notas se escriben en el idioma de tu mensaje de voz.
-  add_need_reply: Responde /add al mensaje de la nota que quieres actualizar.
-  add_not_a_note: |-
-    No pude interpretar ese mensaje como una nota. Responde /add a un
-    mensaje de nota enviado por este bot.
-  add_armed: |-
-    OK. Envía 1 audio en {ttl}s para unirlo. Usa /cancel para parar.
-  edit_need_reply: Responde /edit al mensaje de la nota que quieres corregir.
-  edit_not_a_note: |-
-    No pude interpretar ese mensaje como una nota. Responde /edit a un
-    mensaje de nota enviado por este bot.
-  edit_prompt: |-
-    Mejor: responde a la nota citando la línea a corregir y envía solo el
-    texto nuevo.
-
-    O toca el número de un punto, o envía las líneas a corregir:
-    Solo cambia la línea que indiques:
-    2 texto nuevo - reemplazar el punto 2
-    -2 - eliminar el punto 2
-    + nuevo punto - añadir un punto
-    t nuevo título - reemplazar el título de la nota
-    l nuevo encabezado - reemplazar el encabezado de la lista
-
-    /cancel para parar.
-  edit_done: "Nota actualizada. Líneas cambiadas: {count}"
-  edit_nothing: |-
-    No encontré correcciones válidas. Ejemplo: `2 texto corregido`, `-1`,
-    `+ nuevo punto`.
-  edit_same: La nota ya dice eso, no hay nada que cambiar.
-  edit_selected: |-
-    Punto {number} seleccionado. Envía el texto nuevo.
-    Actual: {current}
-  edit_expired: La sesión caducó. Envía /edit otra vez.
-  edit_cancelled: Corrección cancelada.
+  edit_need_quote: |-
+    Primero selecciona el texto a reemplazar: responde a la nota, cita el
+    fragmento y envía /edit <texto nuevo>.
+  edit_quote_miss: |-
+    No encuentro "{quoted}" en la nota. Cita el texto exacto a reemplazar.
+  add_full: "La lista está llena ({count} puntos). Elimina uno primero."
   cancel_done: Modo de unión cancelado.
   cancel_nothing: Nada que cancelar.
   status_transcribing: Transcribiendo…

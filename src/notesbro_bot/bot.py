@@ -6,16 +6,10 @@ import time
 from io import BytesIO
 
 from openai import OpenAI
-from telegram import (
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    Message,
-    Update,
-)
+from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
-    CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
     MessageHandler,
@@ -27,11 +21,9 @@ from notesbro_bot.db import NoteRepository
 from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
-    _parse_item_number,
-    apply_note_edits,
-    find_item_by_quote,
-    merge_transcript_into_note_sync,
+    add_item,
     parse_voice_note_from_message_text,
+    replace_quoted_text,
     summarize_transcript_to_note_sync,
     voice_note_to_telegram_html,
 )
@@ -40,69 +32,49 @@ LOGGER = logging.getLogger(__name__)
 
 _API_RETRIES = 3
 
-# user_data keys: next voice after /add is treated as merge.
-# (Telegram has no reliable caption on push-to-talk voice.)
-_UD_AWAITING_ADD_VOICE = "awaiting_add_voice"
-_UD_AWAITING_ADD_DEADLINE_MONO = "awaiting_add_deadline_mono"
-_UD_ADD_TARGET_MESSAGE_ID = "add_target_message_id"
-_UD_ADD_PREVIOUS_NOTE_JSON = "add_previous_note_json"
-_UD_ADD_STATUS_MESSAGE_ID = "add_status_message_id"
+# One armed voice session shared by /add and /edit. All values live under
+# a single key so /cancel clears the whole thing atomically.
+_UD_PENDING = "pending_voice"
 
-_ADD_VOICE_TTL_SEC = 120.0
+MODE_ADD = "add"
+MODE_EDIT = "edit"
 
-# user_data keys for /edit: next message is a set of line edits.
-_UD_AWAITING_EDIT = "awaiting_edit"
-_UD_EDIT_DEADLINE_MONO = "awaiting_edit_deadline_mono"
-_UD_EDIT_TARGET_MESSAGE_ID = "edit_target_message_id"
-_UD_EDIT_PREVIOUS_NOTE_JSON = "edit_previous_note_json"
-_UD_EDIT_STATUS_MESSAGE_ID = "edit_status_message_id"
-_UD_EDIT_SELECTED_ITEM = "edit_selected_item"
-
-_EDIT_TTL_SEC = 300.0
+_VOICE_TTL_SEC = 60.0
 
 
-def _disarm_add_voice(user_data: dict) -> None:
-    user_data.pop(_UD_AWAITING_ADD_VOICE, None)
-    user_data.pop(_UD_AWAITING_ADD_DEADLINE_MONO, None)
-    user_data.pop(_UD_ADD_TARGET_MESSAGE_ID, None)
-    user_data.pop(_UD_ADD_PREVIOUS_NOTE_JSON, None)
-    user_data.pop(_UD_ADD_STATUS_MESSAGE_ID, None)
-
-
-def _arm_edit(user_data: dict, ttl_sec: float = _EDIT_TTL_SEC) -> None:
-    user_data[_UD_AWAITING_EDIT] = True
-    user_data[_UD_EDIT_DEADLINE_MONO] = time.monotonic() + ttl_sec
-
-
-def _disarm_edit(user_data: dict) -> None:
-    user_data.pop(_UD_AWAITING_EDIT, None)
-    user_data.pop(_UD_EDIT_DEADLINE_MONO, None)
-    user_data.pop(_UD_EDIT_TARGET_MESSAGE_ID, None)
-    user_data.pop(_UD_EDIT_PREVIOUS_NOTE_JSON, None)
-    user_data.pop(_UD_EDIT_STATUS_MESSAGE_ID, None)
-    user_data.pop(_UD_EDIT_SELECTED_ITEM, None)
-
-
-def _edit_arm_expired(user_data: dict) -> bool:
-    deadline = user_data.get(_UD_EDIT_DEADLINE_MONO)
-    if deadline is None:
-        return True
-    return time.monotonic() > float(deadline)
-
-
-
-def _arm_add_voice(
-    user_data: dict, ttl_sec: float = _ADD_VOICE_TTL_SEC
+def _arm(
+    user_data: dict,
+    mode: str,
+    target_message_id: int,
+    note: VoiceNote | None = None,
+    quote: str | None = None,
+    status_message_id: int | None = None,
+    ttl_sec: float = _VOICE_TTL_SEC,
 ) -> None:
-    user_data[_UD_AWAITING_ADD_VOICE] = True
-    user_data[_UD_AWAITING_ADD_DEADLINE_MONO] = time.monotonic() + ttl_sec
+    user_data[_UD_PENDING] = {
+        "mode": mode,
+        "deadline_mono": time.monotonic() + ttl_sec,
+        "target_message_id": int(target_message_id),
+        "note_json": note.model_dump_json() if note else None,
+        "quote": quote,
+        "status_message_id": status_message_id,
+    }
 
 
-def _add_voice_arm_expired(user_data: dict) -> bool:
-    deadline = user_data.get(_UD_AWAITING_ADD_DEADLINE_MONO)
-    if deadline is None:
-        return True
-    return time.monotonic() > float(deadline)
+def _pending(user_data: dict) -> dict | None:
+    """Armed session, or ``None`` when absent/expired (and then cleared)."""
+    pending = user_data.get(_UD_PENDING)
+    if not isinstance(pending, dict):
+        return None
+    if time.monotonic() > float(pending.get("deadline_mono", 0)):
+        _disarm(user_data)
+        return None
+    return pending
+
+
+def _disarm(user_data: dict) -> bool:
+    """Drop the armed session. Returns whether one was actually armed."""
+    return user_data.pop(_UD_PENDING, None) is not None
 
 
 def _audio_file(audio: bytes, mime_type: str) -> tuple[str, bytes, str]:
@@ -243,6 +215,114 @@ async def cmd_set_locale(
     )
 
 
+def _joined_args(context: ContextTypes.DEFAULT_TYPE) -> str:
+    return " ".join(context.args or []).strip()
+
+
+async def _arm_or_apply_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    locale: str,
+    mode: str,
+    typed: str,
+) -> None:
+    """Shared body of /add and /edit.
+
+    Text given inline is applied immediately; without text the session is
+    armed and the next voice message is applied the same way in one minute.
+    """
+    ud = context.user_data
+    if ud is None or update.message is None:
+        return
+    chat_id = update.effective_chat.id  # type: ignore[union-attr]
+    target = update.message.reply_to_message
+    previous = parse_voice_note_from_message_text(
+        (target.text if target else "") or ""
+    )
+    if target is None:
+        _disarm(ud)
+        await update.message.reply_text(translate(locale, "need_reply"))
+        return
+    if previous is None:
+        _disarm(ud)
+        await update.message.reply_text(translate(locale, "not_a_note"))
+        return
+
+    quote = _quote_text(update.message)
+    if mode == MODE_EDIT and not quote:
+        _disarm(ud)
+        await update.message.reply_text(translate(locale, "edit_need_quote"))
+        return
+
+    if typed:
+        _disarm(ud)
+        await _apply_text(
+            update,
+            context,
+            locale=locale,
+            mode=mode,
+            note=previous,
+            quote=quote,
+            text=typed,
+            chat_id=chat_id,
+            target_message_id=int(target.message_id),
+        )
+        return
+
+    status = await update.message.reply_text(
+        translate(locale, f"{mode}_armed", ttl=f"{_VOICE_TTL_SEC:.0f}")
+    )
+    _arm(
+        ud,
+        mode,
+        target_message_id=int(target.message_id),
+        note=previous,
+        quote=quote,
+        status_message_id=int(status.message_id),
+    )
+
+
+async def _apply_text(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    locale: str,
+    mode: str,
+    note: VoiceNote,
+    quote: str | None,
+    text: str,
+    chat_id: int,
+    target_message_id: int,
+) -> None:
+    """Apply typed or transcribed text as an append or a quoted replace."""
+    if mode == MODE_EDIT:
+        updated = replace_quoted_text(note, quote, text)
+        if updated is None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=translate(locale, "edit_quote_miss", quoted=quote or ""),
+            )
+            return
+    else:
+        updated = add_item(note, text)
+        if updated is None:
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=translate(locale, "add_full", count=str(len(note.items))),
+            )
+            return
+    if not await _push_note(context, chat_id, target_message_id, updated):
+        await context.bot.send_message(
+            chat_id=chat_id, text=translate(locale, "note_update_failed")
+        )
+        return
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=translate(locale, "note_updated"),
+    )
+
+
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if (
         update.effective_user is None
@@ -253,30 +333,35 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     locale = await _locale_code(update, context)
     if await _is_access_denied(update, context, locale):
         return
-    ud = context.user_data
-    if ud is None:
-        return
-
-    if update.message.reply_to_message is None:
-        _disarm_add_voice(ud)
-        await update.message.reply_text(translate(locale, "add_need_reply"))
-        return
-
-    target_message_id = update.message.reply_to_message.message_id
-    prev_text = update.message.reply_to_message.text or ""
-    previous = parse_voice_note_from_message_text(prev_text)
-    if previous is None:
-        _disarm_add_voice(ud)
-        await update.message.reply_text(translate(locale, "add_not_a_note"))
-        return
-
-    _arm_add_voice(ud)
-    ud[_UD_ADD_TARGET_MESSAGE_ID] = int(target_message_id)
-    ud[_UD_ADD_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
-    status_msg = await update.message.reply_text(
-        translate(locale, "add_armed", ttl=f"{_ADD_VOICE_TTL_SEC:.0f}")
+    await _arm_or_apply_text(
+        update,
+        context,
+        locale=locale,
+        mode=MODE_ADD,
+        typed=_joined_args(context),
     )
-    ud[_UD_ADD_STATUS_MESSAGE_ID] = int(status_msg.message_id)
+
+
+async def _push_note(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    message_id: int,
+    note: VoiceNote,
+) -> bool:
+    """Rewrite a note message in place. Returns ``False`` on Telegram error."""
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=int(message_id),
+            text=voice_note_to_telegram_html(note),
+            parse_mode=ParseMode.HTML,
+        )
+        return True
+    except Exception:
+        LOGGER.exception(
+            "Telegram HTML edit failed for message %s", message_id
+        )
+        return False
 
 
 async def cmd_cancel(
@@ -290,16 +375,7 @@ async def cmd_cancel(
     ud = context.user_data
     if ud is None:
         return
-    had_edit = bool(ud.get(_UD_AWAITING_EDIT))
-    had_add = bool(ud.get(_UD_AWAITING_ADD_VOICE))
-    _disarm_add_voice(ud)
-    _disarm_edit(ud)
-    if had_edit:
-        key = "edit_cancelled"
-    elif had_add:
-        key = "cancel_done"
-    else:
-        key = "cancel_nothing"
+    key = "cancel_done" if _disarm(ud) else "cancel_nothing"
     await update.message.reply_text(translate(locale, key))
 
 
@@ -322,15 +398,12 @@ async def _safe_edit_message(
     chat_id: int,
     message_id: int,
     text: str,
-    reply_markup: InlineKeyboardMarkup | None = None,
 ) -> None:
-    kwargs = {"reply_markup": reply_markup} if reply_markup else {}
     try:
         await context.bot.edit_message_text(
             chat_id=chat_id,
             message_id=message_id,
             text=text,
-            **kwargs,
         )
     except Exception:
         # Message could be too old to edit or already deleted. No-op.
@@ -362,6 +435,7 @@ async def _show_status(
 
 
 async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Replace the quoted fragment; without text the next voice does it."""
     if (
         update.effective_user is None
         or update.effective_chat is None
@@ -371,171 +445,12 @@ async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     locale = await _locale_code(update, context)
     if await _is_access_denied(update, context, locale):
         return
-    ud = context.user_data
-    if ud is None:
-        return
-
-    target = update.message.reply_to_message
-    previous = parse_voice_note_from_message_text(
-        (target.text if target else "") or ""
-    )
-    _disarm_add_voice(ud)
-    if target is None:
-        await update.message.reply_text(translate(locale, "edit_need_reply"))
-        return
-    if previous is None:
-        await update.message.reply_text(translate(locale, "edit_not_a_note"))
-        return
-
-    _arm_edit(ud)
-    ud[_UD_EDIT_TARGET_MESSAGE_ID] = int(target.message_id)
-    ud[_UD_EDIT_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
-    status = await update.message.reply_text(
-        _number_lines(previous) + "\n\n" + translate(locale, "edit_prompt"),
-        reply_markup=_item_keyboard(previous),
-    )
-    ud[_UD_EDIT_STATUS_MESSAGE_ID] = int(status.message_id)
-
-
-def _item_keyboard(note: VoiceNote) -> InlineKeyboardMarkup:
-    """One button per item: tapping arms it for a plain-text replace."""
-    buttons = [
-        InlineKeyboardButton(str(number), callback_data=f"ed:{number}")
-        for number in range(1, len(note.items) + 1)
-    ]
-    return InlineKeyboardMarkup(
-        [buttons[i : i + 5] for i in range(0, len(buttons), 5)]
-    )
-
-
-async def on_edit_select(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """User tapped an item number: next plain text replaces just that item."""
-    query = update.callback_query
-    if query is None or query.data is None:
-        return
-    ud = context.user_data or {}
-    locale = await _locale_code(update, context)
-    if query.message is not None:
-        await query.answer()
-    if not ud.get(_UD_AWAITING_EDIT) or _edit_arm_expired(ud):
-        if query.message is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=query.message.chat_id,
-                message_id=query.message.message_id,
-                text=translate(locale, "edit_expired"),
-            )
-        return
-    previous = _load_note(ud.get(_UD_EDIT_PREVIOUS_NOTE_JSON))
-    index = _parse_item_number(query.data.split(":", 1)[-1])
-    if previous is None or index is None or index >= len(previous.items):
-        if query.message is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=query.message.chat_id,
-                message_id=query.message.message_id,
-                text=translate(locale, "edit_nothing"),
-            )
-        return
-    ud[_UD_EDIT_SELECTED_ITEM] = index
-    if query.message is not None:
-        await _safe_edit_message(
-            context,
-            chat_id=query.message.chat_id,
-            message_id=query.message.message_id,
-            text=translate(
-                locale,
-                "edit_selected",
-                number=str(index + 1),
-                current=previous.items[index],
-            ),
-            reply_markup=_item_keyboard(previous),
-        )
-
-
-async def on_edit_text(
-    update: Update, context: ContextTypes.DEFAULT_TYPE
-) -> None:
-    """Apply ``2 fixed text`` style line edits to the armed note."""
-    if not update.message or not update.message.text:
-        return
-    ud = context.user_data or {}
-    if not ud.get(_UD_AWAITING_EDIT):
-        return
-    if _edit_arm_expired(ud):
-        _disarm_edit(ud)
-        return
-    target_message_id = ud.get(_UD_EDIT_TARGET_MESSAGE_ID)
-    status_message_id = ud.get(_UD_EDIT_STATUS_MESSAGE_ID)
-    previous = _load_note(ud.get(_UD_EDIT_PREVIOUS_NOTE_JSON))
-    # A tapped item number means the raw text is the replacement for it.
-    selected = ud.get(_UD_EDIT_SELECTED_ITEM)
-    _disarm_edit(ud)
-    if target_message_id is None or previous is None:
-        return
-
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
-        return
-    chat_id = update.effective_chat.id
-    # Only reuse a message we actually own and can edit; never post another
-    # instruction block just because the user replied to something else.
-    status = update.message.reply_to_message
-    if status is None or status.message_id != status_message_id:
-        status = None
-
-    async def notify(key: str, **kwargs: str) -> None:
-        text = translate(locale, key, **kwargs)
-        if status is not None:
-            await status.edit_text(text)
-        else:
-            await update.message.reply_text(text)
-
-    raw = update.message.text
-    # Priority: a quote names the line exactly, a tapped button picks by
-    # number, and anything else is the `2 new text` command syntax.
-    quoted = _quote_text(update.message)
-    index = find_item_by_quote(previous, quoted)
-    if index is None and isinstance(selected, int):
-        index = selected
-    if index is not None and not raw.lstrip().startswith(("+", "-")):
-        # The whole message is the new text for the quoted/tapped item.
-        if raw.strip():
-            raw = f"{index + 1} {raw.strip()}"
-
-    edited, applied = apply_note_edits(previous, raw)
-    if not applied:
-        await notify("edit_nothing")
-        return
-    if edited == previous:
-        # Telegram rejects a no-op edit with "message is not modified".
-        await notify("edit_same")
-        return
-
-    html_body = voice_note_to_telegram_html(edited)
-    try:
-        await context.bot.edit_message_text(
-            chat_id=chat_id,
-            message_id=int(target_message_id),
-            text=html_body,
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception as e:
-        LOGGER.exception("Telegram HTML edit failed")
-        await notify("err_format", error=str(e), transcript="")
-        return
-    # Clear the instruction block and the user's edit lines, then confirm.
-    if status_message_id is not None:
-        await _safe_delete_message(
-            context, chat_id=chat_id, message_id=int(status_message_id)
-        )
-    await _safe_delete_message(
-        context, chat_id=chat_id, message_id=update.message.message_id
-    )
-    await update.message.reply_text(
-        translate(locale, "edit_done", count=str(applied))
+    await _arm_or_apply_text(
+        update,
+        context,
+        locale=locale,
+        mode=MODE_EDIT,
+        typed=_joined_args(context),
     )
 
 
@@ -576,37 +491,26 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     ud = context.user_data or {}
 
-    merge = False
-    previous = None
-    target_message_id: int | None = None
-    add_status_message_id: int | None = None
-    if ud.get(_UD_AWAITING_ADD_VOICE):
-        if _add_voice_arm_expired(ud):
-            _disarm_add_voice(ud)
-        else:
-            target_message_id = ud.get(_UD_ADD_TARGET_MESSAGE_ID)
-            add_status_message_id = ud.get(_UD_ADD_STATUS_MESSAGE_ID)
-            previous = _load_note(ud.get(_UD_ADD_PREVIOUS_NOTE_JSON))
-            _disarm_add_voice(ud)
-            merge = previous is not None
+    # An armed session (from /add or /edit without text) consumes this voice.
+    pending = _pending(ud)
+    if pending is not None:
+        _disarm(ud)
+    armed = pending is not None
 
-    voice = update.message.voice
-    mime = voice.mime_type or "audio/ogg"
-    status: Message | None = None
-    pending_text = (
-        "status_transcribing_addon" if merge else "status_transcribing"
+    status_text = (
+        "status_transcribing_addon" if armed else "status_transcribing"
     )
-    if merge and add_status_message_id is not None:
-        await _show_status(
+    if armed and pending.get("status_message_id"):
+        await _safe_edit_message(
             context,
             chat_id=chat_id,
-            reply_message=None,
-            edit_message_id=add_status_message_id,
-            text=translate(locale, pending_text),
+            message_id=int(pending["status_message_id"]),
+            text=translate(locale, status_text),
         )
+        status: Message | None = None
     else:
         status = await update.message.reply_text(
-            translate(locale, pending_text)
+            translate(locale, status_text)
         )
 
     async def show(text_key: str, **kwargs: str) -> None:
@@ -614,10 +518,12 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             context,
             chat_id=chat_id,
             reply_message=status,
-            edit_message_id=add_status_message_id,
+            edit_message_id=(pending or {}).get("status_message_id"),
             text=translate(locale, text_key, **kwargs),
         )
 
+    voice = update.message.voice
+    mime = voice.mime_type or "audio/ogg"
     buf = BytesIO()
     try:
         tg_file = await context.bot.get_file(voice.file_id)
@@ -641,23 +547,30 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         LOGGER.exception("Transcription failed")
         await show("err_transcribe", error=str(e))
         return
-
     if not transcript:
         await show("no_speech")
         return
 
-    await show("status_merging" if merge else "status_summarizing")
-    try:
-        if merge and previous is not None:
-            note = await asyncio.to_thread(
-                merge_transcript_into_note_sync,
-                client,
-                settings.model_name,
-                previous,
-                transcript,
-                locale,
-            )
-        else:
+    await show("status_merging" if armed else "status_summarizing")
+
+    if armed:
+        note = _load_note(pending.get("note_json"))
+        if note is None:
+            await show("note_update_failed")
+            return
+        await _apply_text(
+            update,
+            context,
+            locale=locale,
+            mode=str(pending.get("mode", MODE_ADD)),
+            note=note,
+            quote=pending.get("quote"),
+            text=transcript,
+            chat_id=chat_id,
+            target_message_id=int(pending["target_message_id"]),
+        )
+    else:
+        try:
             note = await asyncio.to_thread(
                 summarize_transcript_to_note_sync,
                 client,
@@ -665,42 +578,31 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 transcript,
                 locale,
             )
-    except Exception as e:
-        LOGGER.exception("Note step failed")
-        await show("err_notes", error=str(e))
-        return
-
-    html_body = voice_note_to_telegram_html(note)
-    try:
-        if merge and target_message_id is not None:
-            # Update the original note message.
-            await context.bot.edit_message_text(
-                chat_id=chat_id,
-                message_id=int(target_message_id),
-                text=html_body,
-                parse_mode=ParseMode.HTML,
-            )
-            # Clear helper/status message for a cleaner chat.
-            if add_status_message_id is not None:
-                await _safe_delete_message(
-                    context,
-                    chat_id=chat_id,
-                    message_id=int(add_status_message_id),
-                )
-            if status is not None:
-                await _safe_delete_message(
-                    context,
-                    chat_id=chat_id,
-                    message_id=int(status.message_id),
-                )
-        else:
+        except Exception as e:
+            LOGGER.exception("Note step failed")
+            await show("err_notes", error=str(e))
+            return
+        html_body = voice_note_to_telegram_html(note)
+        try:
             if status is not None:
                 await status.edit_text(html_body, parse_mode=ParseMode.HTML)
-    except Exception as e:
-        LOGGER.exception(
-            "Telegram HTML edit failed, sending plain transcript fallback"
+            else:
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text=html_body,
+                    parse_mode=ParseMode.HTML,
+                )
+        except Exception as e:
+            LOGGER.exception(
+                "Telegram HTML send failed, sending plain transcript"
+            )
+            await show("err_format", error=str(e), transcript=transcript)
+    if pending is not None and pending.get("status_message_id"):
+        await _safe_delete_message(
+            context,
+            chat_id=chat_id,
+            message_id=int(pending["status_message_id"]),
         )
-        await show("err_format", error=str(e), transcript=transcript)
 
 
 def build_application(settings: Settings) -> Application:
@@ -728,10 +630,5 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("edit", cmd_edit))
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(MessageHandler(filters.VOICE, on_voice))
-    application.add_handler(
-        CallbackQueryHandler(on_edit_select, pattern=r"^ed:\d+$")
-    )
-    application.add_handler(
-        MessageHandler(filters.TEXT & ~filters.COMMAND, on_edit_text)
-    )
+
     return application

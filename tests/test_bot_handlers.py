@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import asyncio
-import time
 from types import SimpleNamespace
 
 import pytest
 from fakes import (
     FakeBot,
-    FakeCallbackQuery,
     FakeContext,
     FakeMessage,
     FakeRepository,
@@ -18,11 +15,8 @@ from fakes import (
 )
 
 from notesbro_bot.bot import (
-    _ADD_VOICE_TTL_SEC,
-    _UD_ADD_PREVIOUS_NOTE_JSON,
-    _UD_ADD_TARGET_MESSAGE_ID,
-    _UD_AWAITING_ADD_VOICE,
-    _item_keyboard,
+    MODE_ADD,
+    MODE_EDIT,
     _locale_code,
     _post_init,
     _show_status,
@@ -33,8 +27,6 @@ from notesbro_bot.bot import (
     cmd_help,
     cmd_set_locale,
     cmd_start,
-    on_edit_select,
-    on_edit_text,
     on_voice,
     transcribe_voice_sync,
 )
@@ -189,47 +181,9 @@ async def test_set_locale_saves_and_confirms_in_new_locale() -> None:
     assert "Язык сохранен" in context.bot.sent[-1]["text"]
 
 
-async def test_add_without_reply_prompts_usage() -> None:
-    context = FakeContext()
-    message = FakeMessage()
-    await cmd_add(make_update(message=message), context)
-    assert "Reply /add" in message.replies[0]
 
 
-async def test_add_rejects_plain_text_target() -> None:
-    context = FakeContext()
-    message = FakeMessage(reply_to_message=FakeMessage(text="just chat"))
-    await cmd_add(make_update(message=message), context)
-    assert "couldn't parse" in message.replies[0]
 
-
-async def test_add_arms_merge_and_stores_state() -> None:
-    context = FakeContext()
-    message = FakeMessage(reply_to_message=FakeMessage(text=NOTE_TEXT))
-    await cmd_add(make_update(message=message), context)
-    assert context.user_data[_UD_AWAITING_ADD_VOICE] is True
-    assert context.user_data[_UD_ADD_TARGET_MESSAGE_ID] == 1
-    assert _UD_ADD_PREVIOUS_NOTE_JSON in context.user_data
-    assert str(int(_ADD_VOICE_TTL_SEC)) in message.replies[0]
-
-
-async def test_add_returns_without_user() -> None:
-    context = FakeContext()
-    update = make_update(message=FakeMessage())
-    update.effective_user = None
-    await cmd_add(update, context)
-    assert context.user_data == {}
-
-
-async def test_cancel_reports_done_and_nothing() -> None:
-    context = FakeContext()
-    message = FakeMessage()
-    await cmd_cancel(make_update(message=message), context)
-    assert message.replies[-1] == "Nothing to cancel."
-    context.user_data[_UD_AWAITING_ADD_VOICE] = True
-    await cmd_cancel(make_update(message=message), context)
-    assert message.replies[-1] == "Cancelled merge mode."
-    assert _UD_AWAITING_ADD_VOICE not in context.user_data
 
 
 async def test_post_init_initializes_repository() -> None:
@@ -240,42 +194,7 @@ async def test_post_init_initializes_repository() -> None:
     assert repository.initialized is True
 
 
-async def test_show_status_prefers_reply_message() -> None:
-    context = FakeContext()
-    message = FakeMessage()
-    await _show_status(
-        context,
-        chat_id=1,
-        reply_message=message,
-        edit_message_id=5,
-        text="x",
-    )
-    assert message.edits == [("x", {})]
-    assert context.bot.edited == []
 
-
-async def test_show_status_edits_by_id_when_no_reply_message() -> None:
-    context = FakeContext()
-    await _show_status(
-        context,
-        chat_id=1,
-        reply_message=None,
-        edit_message_id=5,
-        text="x",
-    )
-    assert context.bot.edited[0]["message_id"] == 5
-
-
-async def test_show_status_swallows_edit_errors() -> None:
-    bot = FakeBot(fail_edit=True)
-    context = FakeContext(bot=bot)
-    await _show_status(
-        context,
-        chat_id=1,
-        reply_message=None,
-        edit_message_id=5,
-        text="x",
-    )
 
 
 async def test_on_voice_happy_path() -> None:
@@ -362,73 +281,6 @@ async def test_on_voice_falls_back_to_plain_text_on_format_error() -> None:
     assert "hi" in message.edits[-1][0]
 
 
-async def _armed_context(**kwargs) -> FakeContext:
-    context = FakeContext(**kwargs)
-    context.user_data[_UD_AWAITING_ADD_VOICE] = True
-    context.user_data[_UD_ADD_TARGET_MESSAGE_ID] = 55
-    context.user_data[_UD_ADD_PREVIOUS_NOTE_JSON] = NOTE.model_dump_json()
-    context.user_data["add_status_message_id"] = 99
-    context.user_data["awaiting_add_deadline_mono"] = time.monotonic() + 60
-    return context
-
-
-async def test_on_voice_merges_into_original_message() -> None:
-    client = FakeClient(transcript="more")
-    context = await _armed_context(client=client)
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert context.bot.edited[0] == {
-        "chat_id": 777,
-        "message_id": 99,
-        "text": "Transcribing add-on…",
-    }
-    assert context.bot.edited[-1]["message_id"] == 55
-    assert context.bot.deleted[0]["message_id"] == 99
-    assert _UD_AWAITING_ADD_VOICE not in context.user_data
-    prompt = client.chat_calls[0]["messages"][0]["content"]
-    assert "Merge an existing note" in prompt
-
-
-async def test_on_voice_merge_without_status_id_uses_reply_status() -> None:
-    client = FakeClient(transcript="more")
-    context = await _armed_context(client=client)
-    context.user_data.pop("add_status_message_id")
-    context.user_data[_UD_ADD_TARGET_MESSAGE_ID] = 55
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert message.replies[0] == "Transcribing add-on…"
-    # The reply-based progress message is cleaned up after the merge.
-    assert context.bot.deleted == [{"chat_id": 777, "message_id": 2}]
-    assert context.bot.edited[-1]["message_id"] == 55
-    assert context.bot.edited[-1]["text"] == NOTE_TEXT
-
-
-async def test_on_voice_merge_drops_corrupt_state() -> None:
-    client = FakeClient(transcript="more")
-    context = await _armed_context(client=client)
-    context.user_data[_UD_ADD_PREVIOUS_NOTE_JSON] = "{not json"
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert message.replies[0] == "Transcribing…"
-    assert _UD_AWAITING_ADD_VOICE not in context.user_data
-
-
-async def test_on_voice_expired_arm_summarizes_instead_of_merging() -> None:
-    client = FakeClient(transcript="more")
-    context = await _armed_context(client=client)
-    context.user_data["awaiting_add_deadline_mono"] = 0.0
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert message.replies[0] == "Transcribing…"
-
-
-async def test_on_voice_merge_ignores_delete_failure() -> None:
-    bot = FakeBot(fail_delete=True)
-    context = await _armed_context(client=FakeClient(), bot=bot)
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert bot.edited[-1]["message_id"] == 55
-
 
 def test_build_application_registers_handlers() -> None:
     application = build_application(make_settings())
@@ -487,23 +339,6 @@ def test_audio_file_extension_mapping() -> None:
     assert _audio_file(b"a", "audio/mpeg")[0] == "voice.mp3"
     assert _audio_file(b"a", "audio/AMR; codecs=x")[0] == "voice.amr"
 
-
-async def test_repeated_flows_stay_independent() -> None:
-    client = FakeClient(transcript="x")
-    context = FakeContext(client=client)
-    message = FakeMessage(voice=FakeVoice())
-    await asyncio.gather(
-        on_voice(make_update(message=message), context),
-        on_voice(make_update(message=message), context),
-    )
-    assert message.replies == ["Transcribing…", "Transcribing…"]
-    assert [text for text, _ in message.edits[-2:]] == [NOTE_TEXT, NOTE_TEXT]
-
-
-async def test_arm_expired_without_deadline() -> None:
-    from notesbro_bot.bot import _add_voice_arm_expired
-
-    assert _add_voice_arm_expired({}) is True
 
 
 async def test_locale_code_without_user() -> None:
@@ -567,26 +402,7 @@ async def test_add_without_message() -> None:
     assert context.bot.sent == []
 
 
-async def test_on_voice_merge_state_without_previous_json() -> None:
-    client = FakeClient(transcript="more")
-    context = await _armed_context(client=client)
-    context.user_data.pop(_UD_ADD_PREVIOUS_NOTE_JSON)
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert message.replies[0] == "Transcribing…"
 
-
-async def test_on_voice_merge_empty_status_text_keeps_message() -> None:
-    bot = FakeBot()
-    context = await _armed_context(client=FakeClient(), bot=bot)
-    message = FakeMessage(voice=FakeVoice())
-    await on_voice(make_update(message=message), context)
-    assert [d["message_id"] for d in bot.deleted] == [99]
-
-
-@pytest.fixture
-def edit_context() -> FakeContext:
-    return FakeContext()
 
 
 async def _arm_edit(context: FakeContext) -> None:
@@ -597,291 +413,170 @@ async def _arm_edit(context: FakeContext) -> None:
     await cmd_edit(make_update(message=command), context)
 
 
-async def test_edit_without_reply_prompts_usage(edit_context) -> None:
-    message = FakeMessage()
-    await cmd_edit(make_update(message=message), edit_context)
-    assert "Reply /edit" in message.replies[0]
 
 
-async def test_edit_rejects_non_note_target(edit_context) -> None:
-    message = FakeMessage(reply_to_message=FakeMessage(text="hello there"))
-    await cmd_edit(make_update(message=message), edit_context)
-    assert "couldn't parse" in message.replies[0]
 
 
-async def test_edit_arms_and_lists_numbered_items(edit_context) -> None:
-    message = FakeMessage(reply_to_message=FakeMessage(message_id=55,
-                                                      text=NOTE_TEXT))
-    await cmd_edit(make_update(message=message), edit_context)
-    body = message.replies[0]
-    assert "1. a" in body
-    assert "2 new text" in body
-    assert edit_context.user_data["edit_target_message_id"] == 55
 
 
-async def test_edit_text_replaces_only_named_item(edit_context) -> None:
-    await _arm_edit(edit_context)
-    follow_up = FakeMessage(message_id=7, text="1 corrected")
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    edited = edit_context.bot.edited[-1]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+NOTE_TWO = VoiceNote(
+    note_title="T", list_title="L", items=["first", "second"]
+)
+NOTE_TWO_TEXT = voice_note_to_telegram_html(NOTE_TWO)
+
+
+def _ctx(**kwargs):
+    return FakeContext(**kwargs)
+
+
+def _reply(text: str = NOTE_TWO_TEXT, message_id: int = 55):
+    return FakeMessage(reply_to_message=FakeMessage(
+        message_id=message_id, text=text))
+
+
+async def test_add_with_text_appends_immediately() -> None:
+    context = _ctx(args=["buy", "bread"])
+    message = _reply()
+    await cmd_add(make_update(message=message), context)
+    assert context.user_data == {}  # never armed
+    edited = context.bot.edited[-1]
+    assert "buy bread" in edited["text"]
     assert edited["message_id"] == 55
-    assert edited["text"] == voice_note_to_telegram_html(
-        VoiceNote(note_title="T", list_title="L", items=["corrected"])
+    assert context.bot.sent[-1]["text"] == "Note updated."
+
+
+async def test_add_without_text_arms_for_one_minute() -> None:
+    context = _ctx(args=[])
+    message = _reply()
+    await cmd_add(make_update(message=message), context)
+    pending = context.user_data["pending_voice"]
+    assert pending["mode"] == MODE_ADD
+    assert pending["target_message_id"] == 55
+    assert pending["status_message_id"] == 2
+    assert context.bot.edited == []
+
+
+async def test_edit_with_text_replaces_quoted_fragment() -> None:
+    context = _ctx(args=["second", "wording"])
+    message = _reply()
+    message.quote = SimpleNamespace(text="second")
+    await cmd_edit(make_update(message=message), context)
+    edited = context.bot.edited[-1]["text"]
+    assert "second wording" in edited
+    assert "first" in edited
+
+
+async def test_edit_without_text_arms_for_voice() -> None:
+    context = _ctx(args=[])
+    message = _reply()
+    message.quote = SimpleNamespace(text="second")
+    await cmd_edit(make_update(message=message), context)
+    pending = context.user_data["pending_voice"]
+    assert pending["mode"] == MODE_EDIT
+    assert pending["quote"] == "second"
+
+
+async def test_edit_without_quote_refuses() -> None:
+    context = _ctx(args=["nope"])
+    message = _reply()
+    await cmd_edit(make_update(message=message), context)
+    assert "quote" in message.replies[-1].lower()
+    assert context.bot.edited == []
+
+
+async def test_both_commands_require_reply_and_note() -> None:
+    for handler in (cmd_add, cmd_edit):
+        context = _ctx(args=["x"])
+        message = FakeMessage()
+        await handler(make_update(message=message), context)
+        assert message.replies[-1].startswith("Reply to the note")
+        message = FakeMessage(reply_to_message=FakeMessage(text="hi"))
+        await handler(make_update(message=message), context)
+        assert "couldn't parse" in message.replies[-1]
+
+
+async def test_edit_quote_miss_reports_it() -> None:
+    context = _ctx(args=["x"])
+    message = _reply()
+    message.quote = SimpleNamespace(text="nothing like this")
+    await cmd_edit(make_update(message=message), context)
+    assert "nothing like this" in context.bot.sent[-1]["text"]
+    assert context.bot.edited == []
+
+
+async def test_voice_applies_armed_add() -> None:
+    context = _ctx(client=FakeClient(transcript="dictated point"))
+    message = _reply()
+    await cmd_add(make_update(message=message), context)  # arm
+    await on_voice(
+        make_update(message=FakeMessage(voice=FakeVoice())), context
     )
-    assert "1" in follow_up.replies[-1]
+    assert "dictated point" in context.bot.edited[-1]["text"]
+    assert context.user_data == {}
 
 
-async def test_edit_text_ignores_messages_when_not_armed(edit_context) -> None:
-    follow_up = FakeMessage(text="1 corrected")
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert edit_context.bot.edited == []
-
-
-async def test_edit_text_reports_invalid_edits(edit_context) -> None:
-    await _arm_edit(edit_context)
-    status = FakeMessage(message_id=99)
-    edit_context.user_data["edit_status_message_id"] = 99
-    follow_up = FakeMessage(text="99 nope", reply_to_message=status)
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert status.edits[-1][0].startswith("No valid edits")
-
-
-async def test_edit_text_ignores_arm_without_stored_note(
-    edit_context,
-) -> None:
-    edit_context.user_data.update(
-        {
-            "awaiting_edit": True,
-            "awaiting_edit_deadline_mono": time.monotonic() + 60,
-            "edit_target_message_id": 55,
-            "edit_previous_note_json": "{not json",
-        }
+async def test_voice_applies_armed_edit_replacing_quote() -> None:
+    context = _ctx(client=FakeClient(transcript="from voice"))
+    message = _reply()
+    message.quote = SimpleNamespace(text="second")
+    await cmd_edit(make_update(message=message), context)  # arm
+    await on_voice(
+        make_update(message=FakeMessage(voice=FakeVoice())), context
     )
-    await on_edit_text(
-        make_update(message=FakeMessage(text="1 x")), edit_context
-    )
-    assert edit_context.bot.edited == []
+    edited = context.bot.edited[-1]["text"]
+    assert "from voice" in edited
+    assert "first" in edited
 
 
-async def test_edit_text_ignores_expired_arm(edit_context) -> None:
-    edit_context.user_data.update(
-        {
-            "awaiting_edit": True,
-            "awaiting_edit_deadline_mono": 0.0,
-            "edit_target_message_id": 55,
-            "edit_previous_note_json": NOTE.model_dump_json(),
-        }
-    )
-    await on_edit_text(make_update(message=FakeMessage(text="1 x")),
-                       edit_context)
-    assert edit_context.bot.edited == []
+async def test_voice_without_arm_creates_new_note() -> None:
+    client = FakeClient(transcript="hello")
+    context = _ctx(client=client)
+    message = FakeMessage(voice=FakeVoice())
+    await on_voice(make_update(message=message), context)
+    assert message.edits[-1][0] == NOTE_TEXT
+    assert "Summarizing into notes…" in [e[0] for e in message.edits]
 
 
-async def test_cancel_clears_edit_mode(edit_context) -> None:
-    edit_context.user_data["awaiting_edit"] = True
+async def test_cancel_clears_armed_session() -> None:
+    context = _ctx()
+    await cmd_add(make_update(message=_reply()), context)
     message = FakeMessage()
-    await cmd_cancel(make_update(message=message), edit_context)
-    assert message.replies[-1] == "Edit cancelled."
+    await cmd_cancel(make_update(message=message), context)
+    assert message.replies[-1] == "Cancelled merge mode."
+    assert context.user_data == {}
+    await cmd_cancel(make_update(message=message), context)
+    assert message.replies[-1] == "Nothing to cancel."
 
 
-async def test_edit_text_reports_telegram_edit_failure(edit_context) -> None:
-    await _arm_edit(edit_context)
-    edit_context.bot.fail_edit = True  # target note edit raises
-    status = FakeMessage(message_id=99)
-    edit_context.user_data["edit_status_message_id"] = 99
-    follow_up = FakeMessage(text="1 fixed", reply_to_message=status)
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert "Could not send formatted notes" in status.edits[-1][0]
+async def test_expired_session_voice_starts_a_new_note() -> None:
+    context = _ctx(client=FakeClient(transcript="hello"))
+    await cmd_add(make_update(message=_reply()), context)
+    context.user_data["pending_voice"]["deadline_mono"] = 0.0
+    message = FakeMessage(voice=FakeVoice())
+    await on_voice(make_update(message=message), context)
+    assert message.edits[-1][0] == NOTE_TEXT
+    assert context.user_data == {}
 
 
-async def test_edit_text_without_status_message_does_not_crash(
-    edit_context,
-) -> None:
-    await _arm_edit(edit_context)
-    edit_context.user_data.pop("edit_status_message_id", None)
-    follow_up = FakeMessage(text="1 fixed")
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert edit_context.bot.edited[-1]["message_id"] == 55
-
-
-async def test_edit_text_noop_does_not_patch_message(edit_context) -> None:
-    await _arm_edit(edit_context)
-    status = FakeMessage(message_id=99)
-    edit_context.user_data["edit_status_message_id"] = 99
-    follow_up = FakeMessage(text="1 a", reply_to_message=status)
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert "nothing to change" in status.edits[-1][0]
-    assert edit_context.bot.edited == []
-
-
-async def test_edit_done_reports_edited_line_count(edit_context) -> None:
-    await _arm_edit(edit_context)
-    # the fake note has a single item, so pair it with a heading edit
-    follow_up = FakeMessage(text="1 one\nt Renamed")
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert "Lines changed: 2" in follow_up.replies[-1]
-
-
-async def test_edit_reply_to_other_message_spawns_no_extra_prompt(
-    edit_context,
-) -> None:
-    """Replying to anything but our prompt must not post another copy."""
-    await _arm_edit(edit_context)
-    edit_context.user_data["edit_status_message_id"] = 99
-    # user replied to the /edit command, not to the prompt
-    follow_up = FakeMessage(
-        message_id=7,
-        text="1 fixed",
-        reply_to_message=FakeMessage(message_id=5, text="/edit"),
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    # only the short confirmation, never the long instruction block again
-    assert len(follow_up.replies) == 1
-    assert "2 new text" not in follow_up.replies[0]
-    assert follow_up.replies[0].startswith("Note updated")
-
-
-async def test_edit_cleans_up_instruction_and_user_lines(
-    edit_context,
-) -> None:
-    await _arm_edit(edit_context)
-    status = FakeMessage(message_id=99)
-    edit_context.user_data["edit_status_message_id"] = 99
-    follow_up = FakeMessage(
-        message_id=7, text="1 fixed", reply_to_message=status
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    deleted = [d["message_id"] for d in edit_context.bot.deleted]
-    assert deleted == [99, 7]
-    assert follow_up.replies[-1].startswith("Note updated")
-
-
-async def test_edit_invalid_input_does_not_resend_prompt(edit_context) -> None:
-    await _arm_edit(edit_context)
-    status = FakeMessage(message_id=99)
-    edit_context.user_data["edit_status_message_id"] = 99
-    follow_up = FakeMessage(
-        message_id=7, text="garbage", reply_to_message=status
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    # hint is edited in place, not posted again
-    assert follow_up.replies == []
-    assert status.edits[-1][0].startswith("No valid edits")
-
-
-def test_item_keyboard_has_one_button_per_item_and_pages() -> None:
-    note = VoiceNote(
-        note_title="T", list_title="L", items=[f"i{n}" for n in range(7)]
-    )
-    keyboard = _item_keyboard(note)
-    rows = keyboard.inline_keyboard
-    assert [[b.text for b in row] for row in rows] == [
-        ["1", "2", "3", "4", "5"],
-        ["6", "7"],
-    ]
-    assert rows[0][1].callback_data == "ed:2"
-
-
-async def test_tap_selects_item_then_plain_text_replaces_it(
-    edit_context,
-) -> None:
-    await _arm_edit(edit_context)
-    note = VoiceNote(note_title="T", list_title="L", items=["a"])
-    query = FakeCallbackQuery(data="ed:1", message=FakeMessage(message_id=99))
-    edit_context.user_data["edit_previous_note_json"] = (
-        note.model_dump_json()
-    )
-    edit_update = make_update(message=None)
-    edit_update.callback_query = query
-    await on_edit_select(edit_update, edit_context)
-    assert query.answered is True
-    assert edit_context.user_data["edit_selected_item"] == 0
-
-    # bare text now replaces item 1 without retyping "1 "
-    follow_up = FakeMessage(message_id=7, text="plain replacement")
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    edited = edit_context.bot.edited[-1]
-    assert "plain replacement" in edited["text"]
-    assert follow_up.replies[-1].startswith("Note updated")
-
-
-async def test_tap_on_expired_session_reports_it(edit_context) -> None:
-    edit_context.user_data["awaiting_edit"] = True
-    edit_context.user_data["awaiting_edit_deadline_mono"] = 0.0
-    query = FakeCallbackQuery(data="ed:1", message=FakeMessage(message_id=99))
-    edit_update = make_update(message=None)
-    edit_update.callback_query = query
-    await on_edit_select(edit_update, edit_context)
-    assert edit_context.bot.edited[-1]["text"].startswith(
-        "This edit session expired"
-    )
-
-
-async def test_tap_out_of_range_reports_nothing_to_edit(edit_context) -> None:
-    edit_context.user_data.update(
-        {
-            "awaiting_edit": True,
-            "awaiting_edit_deadline_mono": time.monotonic() + 60,
-            "edit_previous_note_json": NOTE.model_dump_json(),
-        }
-    )
-    query = FakeCallbackQuery(data="ed:9", message=FakeMessage(message_id=99))
-    edit_update = make_update(message=None)
-    edit_update.callback_query = query
-    await on_edit_select(edit_update, edit_context)
-    assert edit_context.bot.edited[-1]["text"].startswith("No valid edits")
-
-
-async def test_cmd_edit_attaches_item_buttons(edit_context) -> None:
-    message = FakeMessage(
-        reply_to_message=FakeMessage(message_id=55, text=NOTE_TEXT)
-    )
-    await cmd_edit(make_update(message=message), edit_context)
-    keyboard = message.markups[-1]
-    assert [b.text for b in keyboard.inline_keyboard[0]] == ["1"]
-
-
-async def test_quote_selects_line_without_numbers(edit_context) -> None:
-    await _arm_edit(edit_context)
-    note = VoiceNote(note_title="T", list_title="L", items=["first", "second"])
-    edit_context.user_data["edit_previous_note_json"] = (
-        note.model_dump_json()
-    )
-    follow_up = FakeMessage(
-        message_id=7,
-        text="brand new wording",
-        quote=SimpleNamespace(text="• second"),
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    edited = edit_context.bot.edited[-1]["text"]
-    assert "brand new wording" in edited
-    assert "first" in edited
-
-
-async def test_quote_beats_tapped_button(edit_context) -> None:
-    await _arm_edit(edit_context)
-    note = VoiceNote(note_title="T", list_title="L", items=["first", "second"])
-    edit_context.user_data["edit_previous_note_json"] = (
-        note.model_dump_json()
-    )
-    edit_context.user_data["edit_selected_item"] = 0  # button said item 1
-    follow_up = FakeMessage(
-        message_id=7,
-        text="changed via quote",
-        quote=SimpleNamespace(text="second"),  # quote says item 2
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    edited = edit_context.bot.edited[-1]["text"]
-    assert "first" in edited
-    assert "changed via quote" in edited
-
-
-async def test_quote_of_unknown_text_falls_back_to_command_syntax(
-    edit_context,
-) -> None:
-    await _arm_edit(edit_context)
-    follow_up = FakeMessage(
-        message_id=7, text="1 explicit", quote=SimpleNamespace(text="zzz")
-    )
-    await on_edit_text(make_update(message=follow_up), edit_context)
-    assert "explicit" in edit_context.bot.edited[-1]["text"]
+async def test_armed_voice_with_lost_note_reports_failure() -> None:
+    context = _ctx(client=FakeClient(transcript="hi"))
+    await cmd_add(make_update(message=_reply()), context)
+    context.user_data["pending_voice"]["note_json"] = "{broken"
+    message = FakeMessage(voice=FakeVoice())
+    await on_voice(make_update(message=message), context)
+    assert "Could not update the note" in context.bot.edited[-1]["text"]

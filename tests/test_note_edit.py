@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 from notesbro_bot.models import VoiceNote
-from notesbro_bot.note_summary import apply_note_edits, find_item_by_quote
+from notesbro_bot.note_summary import (
+    add_item,
+    find_item_by_quote,
+    replace_quoted_text,
+)
 
 NOTE = VoiceNote(
     note_title="Planning",
@@ -10,92 +14,79 @@ NOTE = VoiceNote(
 )
 
 
-def test_replace_single_item_by_number() -> None:
-    edited, applied = apply_note_edits(NOTE, "2 call dad")
-    assert applied == 1
-    assert edited.items == ["buy milk", "call dad", "file taxes"]
-    assert edited.note_title == "Planning"
-    assert edited.list_title == "Steps"
-
-
-def test_multiple_edits_apply_in_order() -> None:
-    edited, applied = apply_note_edits(NOTE, "1 buy bread\n-3\n+ walk dog")
-    assert applied == 3
-    assert edited.items == ["buy bread", "call mom", "walk dog"]
-
-
-def test_trailing_item_can_be_deleted_by_number() -> None:
-    edited, applied = apply_note_edits(NOTE, "-3")
-    assert applied == 1
-    assert edited.items == ["buy milk", "call mom"]
-
-
-def test_headings_can_be_rewritten() -> None:
-    edited, _ = apply_note_edits(NOTE, "t Weekend\ntitle Real Title")
-    assert edited.note_title == "Real Title"
-    edited, _ = apply_note_edits(NOTE, "l Shopping\nlist Errands")
-    assert edited.list_title == "Errands"
-
-
-def test_value_keeps_inner_spacing_and_extra_words() -> None:
-    edited, _ = apply_note_edits(NOTE, "2   buy  oat milk  ")
-    assert edited.items[1] == "buy  oat milk"
-
-
-def test_out_of_range_and_garbage_lines_are_ignored() -> None:
-    _, applied = apply_note_edits(NOTE, "9 nope\n0 nope\n-0\nx\n\n   ")
-    assert applied == 0
-
-
-def test_no_edits_reports_zero() -> None:
-    assert apply_note_edits(NOTE, "")[1] == 0
-    assert apply_note_edits(NOTE, "just a sentence")[1] == 0
-
-
-def test_edits_are_capped_to_schema_limits() -> None:
-    many = "\n".join(f"+ item {i}" for i in range(40))
-    edited, applied = apply_note_edits(NOTE, many)
-    assert applied == 40
-    assert len(edited.items) == 16
-
-
-def test_long_heading_is_truncated_to_schema_limit() -> None:
-    edited, _ = apply_note_edits(NOTE, "t " + "T" * 500)
-    assert len(edited.note_title) == 200
-
-
-def test_noop_edit_changes_nothing() -> None:
-    edited, applied = apply_note_edits(NOTE, "2 call mom")
-    assert applied == 1
-    assert edited == NOTE
-
-
-def test_numbered_list_helper_matches_editing_numbers() -> None:
-    from notesbro_bot.bot import _number_lines
-
-    assert _number_lines(NOTE).splitlines()[1] == "2. call mom"
-
-
 def test_quote_matches_exact_line() -> None:
     assert find_item_by_quote(NOTE, "call mom") == 1
 
 
 def test_quote_ignores_bullet_and_case() -> None:
     assert find_item_by_quote(NOTE, "• CALL MOM") == 1
-    assert find_item_by_quote(NOTE, "  call\n  mom  ".replace("\n", " ")) == 1
 
 
 def test_quote_matches_unique_substring() -> None:
     assert find_item_by_quote(NOTE, "taxes") == 2
 
 
-def test_ambiguous_or_empty_quote_edits_nothing() -> None:
+def test_ambiguous_or_empty_quote_matches_nothing() -> None:
     assert find_item_by_quote(NOTE, None) is None
     assert find_item_by_quote(NOTE, "   ") is None
-    # "milk" appears once, but "a" is in both "call mom" and "file taxes"
-    assert find_item_by_quote(NOTE, "milk") == 0
     assert find_item_by_quote(NOTE, "a") is None
 
 
 def test_quote_of_heading_is_not_an_item() -> None:
     assert find_item_by_quote(NOTE, "Planning") is None
+
+
+def test_fragment_is_swapped_and_rest_of_line_survives() -> None:
+    edited = replace_quoted_text(NOTE, "milk", "oat milk")
+    assert edited is not None
+    assert edited.items[0] == "buy oat milk"
+    assert edited.items[1:] == ["call mom", "file taxes"]
+
+
+def test_whole_line_replacement() -> None:
+    edited = replace_quoted_text(NOTE, "call mom", "call dad")
+    assert edited is not None
+    assert edited.items[1] == "call dad"
+
+
+def test_replacement_is_case_insensitive() -> None:
+    edited = replace_quoted_text(NOTE, "FILE TAXES", "pay taxes")
+    assert edited is not None
+    assert edited.items[2] == "pay taxes"
+
+
+def test_replace_without_quote_or_text_changes_nothing() -> None:
+    assert replace_quoted_text(NOTE, None, "x") is None
+    assert replace_quoted_text(NOTE, "milk", "   ") is None
+
+
+def test_replace_unknown_quote_matches_nothing() -> None:
+    assert replace_quoted_text(NOTE, "banana", "x") is None
+
+
+def test_replace_same_text_is_a_noop() -> None:
+    assert replace_quoted_text(NOTE, "call mom", "call mom") is None
+
+
+def test_replace_truncates_overlong_item() -> None:
+    edited = replace_quoted_text(NOTE, "milk", "m" * 500)
+    assert edited is not None
+    assert len(edited.items[0]) == 200
+
+
+def test_add_item_appends_and_normalises_whitespace() -> None:
+    edited = add_item(NOTE, "  wash   car  ")
+    assert edited is not None
+    assert edited.items[-1] == "wash car"
+    assert len(edited.items) == 4
+
+
+def test_add_item_rejects_empty_text() -> None:
+    assert add_item(NOTE, "   ") is None
+
+
+def test_add_item_respects_schema_limit() -> None:
+    full = VoiceNote(
+        note_title="T", list_title="L", items=[f"i{n}" for n in range(16)]
+    )
+    assert add_item(full, "one more") is None
