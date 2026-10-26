@@ -122,20 +122,6 @@ def test_normalize_note_fills_empty_fields() -> None:
     ]
 
 
-def test_merge_prompt_includes_previous_note() -> None:
-    from notesbro_bot.note_summary import merge_transcript_into_note_sync
-
-    seen: list = []
-    note = VoiceNote(note_title="T", list_title="L", items=["a"])
-    message = SimpleNamespace(parsed=note, content=None)
-    merge_transcript_into_note_sync(
-        _client_with(message, seen), "m", note, "new words", "ru"
-    )
-    prompt = seen[0]["messages"][0]["content"]
-    assert "Merge an existing note" in prompt
-    assert '"note_title":"T"' in prompt
-    assert "new words" in prompt
-
 
 def test_parse_note_returns_none_for_garbage() -> None:
     from notesbro_bot.note_summary import parse_voice_note_from_message_text
@@ -161,3 +147,28 @@ def test_parse_note_without_any_heading_defaults_list_title() -> None:
     note = parse_voice_note_from_message_text("Title\n• only")
     assert note is not None
     assert note.list_title == "Summary"
+
+
+@pytest.mark.parametrize(
+    ("locale", "language"),
+    [
+        ("ru", "Russian"),
+        ("de", "German"),
+        ("uk", "Ukrainian"),
+        ("es", "Spanish"),
+        (None, "English"),
+    ],
+)
+def test_summary_prompt_pins_the_locale_language(
+    locale, language
+) -> None:
+    seen: list = []
+    note = VoiceNote(note_title="T", list_title="L", items=["a"])
+    client = _client_with(
+        SimpleNamespace(parsed=note, content=None), seen
+    )
+    summarize_transcript_to_note_sync(client, "m", "hi", locale)
+    prompt = seen[0]["messages"][0]["content"]
+    assert f"Write every field in {language}" in prompt
+    # must not follow the transcript language any more
+    assert "language of the transcript" not in prompt

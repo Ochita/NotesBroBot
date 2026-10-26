@@ -13,22 +13,30 @@ en:
   access_closed: |-
     This bot is not accepting new users. Only existing users may use it.
   start: |-
-    Send a voice message. I will transcribe it and reply with summarized
-    notes: a note title, a list heading, and bullet points.
+    Send a voice message. I will transcribe it and reply with a structured
+    note: a title, a list heading and bullet points.
 
-    To extend a note: reply /add to the note message you want to update,
-    then send your next voice message within two minutes. /cancel clears an
-    armed /add. (No message ids are stored.)
+    Never retype a whole note:
+    /add text - reply to a note to append a point
+    /edit text - reply quoting the text to replace, and only that part changes
+
+    Without text both wait 60s for a voice message. /cancel stops that.
+    /help for all commands.
+
   help: |-
     Commands:
-    /start - subscribe and get usage help
-    /add <text> - reply to a note to append the text right away;
-    /add alone - reply, then send a voice to merge into it
-    /cancel - cancel an armed /add
-    /edit <text> - reply to a note, quote a fragment, replace it
-    /set_locale <code> - set your language
+    /start - subscribe and show usage help
+    /help - show all commands
+    /set_locale <code> - UI language: en, ru, uk, it, fr, de, es
 
-    Notes are written in the language of your voice message.
+    Notes:
+    /add <text>  - reply to a note, append this point
+    /add         - reply to a note, then send a voice to append it
+    /edit <text> - reply to a note quoting the fragment to replace
+    /edit        - reply quoting it, then send a voice to replace it
+    /cancel      - stop waiting for the voice
+
+    Notes are written in your UI language (/set_locale).
   edit_need_quote: |-
     Select the exact text to replace first: reply to the note, quote the
     fragment, then send /edit <new text>.
@@ -74,19 +82,27 @@ ru:
     Отправьте голосовое сообщение. Я расшифрую его и отвечу
     структурированной заметкой: заголовок, подзаголовок списка и пункты.
 
-    Чтобы дополнить заметку: ответьте /add на сообщение с заметкой
-    и отправьте следующее голосовое в течение двух минут. /cancel снимает
-    режим /add. (Идентификаторы сообщений не сохраняются.)
+    Не перепечатывайте заметку целиком:
+    /add текст - ответьте на заметку, чтобы добавить пункт
+    /edit текст - ответьте, выделив текст для замены: изменится только он
+
+    Без текста обе команды 60 с ждут голосовое. /cancel отменяет.
+    /help — все команды.
+
   help: |-
     Команды:
     /start - подписаться и получить справку
-    /add <текст> - ответьте на заметку, чтобы сразу добавить пункт;
-    /add без текста - ответьте и отправьте голосовое для дополнения
-    /cancel - отменить подготовленный /add
-    /edit <текст> - ответьте на заметку, выделите фрагмент, замените его
-    /set_locale <код> - установить язык
+    /help - все команды
+    /set_locale <код> - язык интерфейса: en, ru, uk, it, fr, de, es
 
-    Заметки пишутся на языке вашего голосового сообщения.
+    Заметки:
+    /add <текст>  - ответьте на заметку, чтобы добавить пункт
+    /add          - ответьте на заметку и отправьте голосовое для пункта
+    /edit <текст> - ответьте на заметку, выделив фрагмент для замены
+    /edit         - ответьте, выделив фрагмент, и отправьте голосовое
+    /cancel       - перестать ждать голосовое
+
+    Заметки пишутся на языке интерфейса (/set_locale).
   edit_need_quote: |-
     Сначала выделите текст для замены: ответьте на заметку, процитируйте
     фрагмент и отправьте /edit <новый текст>.
@@ -132,18 +148,27 @@ uk:
     Надішліть голосове повідомлення. Я розшифрую його й відповім
     структурованою нотаткою: заголовок, підзаголовок списку та пункти.
 
-    Щоб доповнити нотатку: дайте відповідь /add на повідомлення з нотаткою
-    й надішліть наступне голосове протягом двох хвилин. /cancel скасовує
-    режим /add. (Ідентифікатори повідомлень не зберігаються.)
+    Не передруковуйте нотатку повністю:
+    /add текст - дайте відповідь на нотатку, щоб додати пункт
+    /edit текст - дайте відповідь, виділивши текст для заміни
+
+    Без тексту обидві команди 60 с чекають голосове. /cancel скасовує.
+    /help — усі команди.
+
   help: |-
     Команди:
     /start - підписатися та отримати довідку
-    /add - відповідайте на нотатку, потім надішліть голосове для доповнення
-    /cancel - скасувати підготовлений /add
-    /edit <текст> - дайте відповідь на нотатку, виділіть фрагмент, замініть його
-    /set_locale <код> - встановити мову
+    /help - усі команди
+    /set_locale <код> - мова інтерфейсу: en, ru, uk, it, fr, de, es
 
-    Нотатки пишуться мовою вашого голосового повідомлення.
+    Нотатки:
+    /add <текст>  - дайте відповідь на нотатку, щоб додати пункт
+    /add          - дайте відповідь і надішліть голосове для пункту
+    /edit <текст> - дайте відповідь, виділивши фрагмент для заміни
+    /edit         - дайте відповідь із виділенням і надішліть голосове
+    /cancel       - перестати чекати голосове
+
+    Нотатки пишуться мовою інтерфейсу (/set_locale).
   edit_need_quote: |-
     Спочатку виділіть текст для заміни: дайте відповідь на нотатку,
     процитуйте фрагмент і надішліть /edit <новий текст>.
@@ -188,19 +213,27 @@ it:
     Invia un messaggio vocale. Lo trascriverò e risponderò con una nota
     strutturata: titolo, intestazione dell'elenco e punti.
 
-    Per estendere una nota: rispondi /add al messaggio della nota, poi invia
-    il vocale successivo entro due minuti. /cancel annulla la modalità /add.
-    (Nessun id dei messaggi viene salvato.)
+    Non riscrivere mai tutta la nota:
+    /add testo - rispondi a una nota per aggiungere un punto
+    /edit testo - rispondi citando il testo da sostituire: cambia solo quello
+
+    Senza testo entrambe attendono 60s un vocale. /cancel lo annulla.
+    /help per tutti i comandi.
+
   help: |-
     Comandi:
     /start - attiva l'iscrizione e mostra la guida
-    /add <testo> - rispondi a una nota per aggiungere il punto;
-    /add da solo - rispondi e invia un vocale da unire
-    /cancel - annulla un /add preparato
-    /edit <testo> - rispondi a una nota, cita un frammento, sostituiscilo
-    /set_locale <codice> - imposta la lingua
+    /help - tutti i comandi
+    /set_locale <codice> - lingua: en, ru, uk, it, fr, de, es
 
-    Le note sono scritte nella lingua del tuo messaggio vocale.
+    Note:
+    /add <testo>  - rispondi a una nota, aggiungi questo punto
+    /add          - rispondi a una nota, poi invia un vocale da aggiungere
+    /edit <testo> - rispondi citando il frammento da sostituire
+    /edit         - rispondi citandolo, poi invia un vocale che lo sostituisca
+    /cancel       - smetti di attendere il vocale
+
+    Le note sono scritte nella lingua dell'interfaccia (/set_locale).
   edit_need_quote: |-
     Prima seleziona il testo da sostituire: rispondi alla nota, cita il
     frammento, poi invia /edit <nuovo testo>.
@@ -246,19 +279,27 @@ fr:
     Envoyez un message vocal. Je le transcrirai et répondrai avec une note
     structurée : titre, en-tête de liste et points.
 
-    Pour compléter une note : répondez /add au message de la note, puis
-    envoyez le vocal suivant dans les deux minutes. /cancel annule le mode
-    /add. (Aucun id de message n'est stocké.)
+    Ne retapez jamais toute la note :
+    /add texte - répondez à une note pour ajouter un point
+    /edit texte - répondez en citant le texte à remplacer : lui seul change
+
+    Sans texte, les deux attendent 60s un vocal. /cancel l'annule.
+    /help pour toutes les commandes.
+
   help: |-
     Commandes :
     /start - s'abonner et afficher l'aide
-    /add <texte> - répondez à une note pour ajouter le point ;
-    /add seul - répondez puis envoyez un vocal à fusionner
-    /cancel - annuler un /add préparé
-    /edit <texte> - répondez à une note, citez un fragment, remplacez-le
-    /set_locale <code> - définir la langue
+    /help - toutes les commandes
+    /set_locale <code> - langue : en, ru, uk, it, fr, de, es
 
-    Les notes sont rédigées dans la langue de votre message vocal.
+    Notes :
+    /add <texte>  - répondez à une note pour ajouter ce point
+    /add          - répondez à une note puis envoyez un vocal à ajouter
+    /edit <texte> - répondez en citant le fragment à remplacer
+    /edit         - répondez en le citant, puis envoyez un vocal
+    /cancel       - arrêter d'attendre le vocal
+
+    Les notes sont rédigées dans la langue de l'interface (/set_locale).
   edit_need_quote: |-
     Sélectionnez d'abord le texte à remplacer : répondez à la note, citez
     le fragment, puis envoyez /edit <nouveau texte>.
@@ -304,19 +345,27 @@ de:
     Sende eine Sprachnachricht. Ich transkribiere sie und antworte mit einer
     strukturierten Notiz: Titel, Listenüberschrift und Stichpunkten.
 
-    Zum Ergänzen einer Notiz: antworte mit /add auf die Notiznachricht und
-    sende die nächste Sprachnachricht innerhalb von zwei Minuten. /cancel
-    hebt ein vorbereitetes /add auf. (Es werden keine Message-IDs gespeichert.)
+    Tippe die Notiz nie komplett neu:
+    /add Text - auf eine Notiz antworten, um einen Punkt anzuhängen
+    /edit Text - antworten und den zu ersetzenden Text zitieren
+
+    Ohne Text warten beide 60s auf eine Sprachnachricht. /cancel bricht ab.
+    /help zeigt alle Befehle.
+
   help: |-
     Befehle:
     /start - Abonnement und Hilfe
-    /add <Text> - auf eine Notiz antworten, um den Punkt sofort anzuhängen;
-    /add allein - antworten, dann Sprachnachricht senden
-    /cancel - vorbereitetes /add abbrechen
-    /edit <Text> - auf eine Notiz antworten, Ausschnitt zitieren, ersetzen
-    /set_locale <Code> - Sprache festlegen
+    /help - alle Befehle
+    /set_locale <Code> - Sprache: en, ru, uk, it, fr, de, es
 
-    Notizen werden in der Sprache deiner Sprachnachricht verfasst.
+    Notizen:
+    /add <Text>  - auf eine Notiz antworten, Punkt anhängen
+    /add         - auf eine Notiz antworten, dann Sprachnachricht senden
+    /edit <Text> - antworten und den Ausschnitt zum Ersetzen zitieren
+    /edit        - zitieren, dann Sprachnachricht zum Ersetzen senden
+    /cancel      - nicht mehr auf die Sprachnachricht warten
+
+    Notizen werden in der Sprache der Oberfläche verfasst (/set_locale).
   edit_need_quote: |-
     Markiere zuerst den zu ersetzenden Text: antworte auf die Notiz,
     zitiere den Ausschnitt, dann sende /edit <neuer Text>.
@@ -373,7 +422,7 @@ es:
     /edit <texto> - responde a una nota, cita un fragmento, reemplázalo
     /set_locale <código> - configurar el idioma
 
-    Las notas se escriben en el idioma de tu mensaje de voz.
+    Las notas se escriben en el idioma de la interfaz (/set_locale).
   edit_need_quote: |-
     Primero selecciona el texto a reemplazar: responde a la nota, cita el
     fragmento y envía /edit <texto nuevo>.

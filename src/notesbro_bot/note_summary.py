@@ -51,44 +51,10 @@ Rules:
 - note_title: a clear title for the whole note.
 - list_title: one heading for the bullet list (not a repeat of note_title).
 - items: 3 to 8 short bullets. One idea per line.
-- Write every field in the language of the transcript. If the speaker
-  switches languages, follow the dominant one. Never answer in English unless
-  the transcript is English.
+- Write every field in {language}, even when the transcript is in another
+  language. Translate the content instead of copying the source wording.
 - Do not invent facts; only summarize what is implied or stated.
 """
-
-
-_MERGE_INSTRUCTION = """Merge an existing note with new spoken content.
-
-You will be given the existing note as JSON, then the new transcript in plain
-text.
-
-Return one updated VoiceNote: refine note_title if needed, one list_title,
-and a merged items list.
-
-Remove clear duplicates; keep facts from both the prior note and the new
-transcript.
-Write every field in the language of the new transcript, even if the existing
-note is in another language.
-Prefer roughly 4-14 bullets; stay within the schema max length.
-"""
-
-
-def merge_transcript_into_note_sync(
-    client: "OpenAI",
-    model_name: str,
-    previous: VoiceNote,
-    new_transcript: str,
-    locale: str | None = None,
-) -> VoiceNote:
-    prompt = (
-        _MERGE_INSTRUCTION
-        + "\n\nExisting note (JSON):\n"
-        + previous.model_dump_json()
-        + "\n\nNew transcript:\n"
-        + new_transcript
-    )
-    return _complete_note(client, model_name, prompt, locale or "en")
 
 
 def summarize_transcript_to_note_sync(
@@ -97,8 +63,28 @@ def summarize_transcript_to_note_sync(
     transcript: str,
     locale: str | None = None,
 ) -> VoiceNote:
-    prompt = f"{_SUMMARY_INSTRUCTION}\n\nTranscript:\n{transcript}"
+    language = _language_name(locale)
+    prompt = (
+        _SUMMARY_INSTRUCTION.format(language=language)
+        + f"\n\nTranscript:\n{transcript}"
+    )
     return _complete_note(client, model_name, prompt, locale or "en")
+
+
+def _language_name(locale: str | None) -> str:
+    """Human-readable name the model can follow, never a bare code."""
+    return _LANGUAGE_NAMES.get(locale or "", "English")
+
+
+_LANGUAGE_NAMES = {
+    "en": "English",
+    "ru": "Russian",
+    "uk": "Ukrainian",
+    "it": "Italian",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+}
 
 
 def _normalize_note(note: VoiceNote, locale: str | None = None) -> VoiceNote:

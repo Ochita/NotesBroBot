@@ -206,9 +206,8 @@ async def test_on_voice_happy_path() -> None:
     assert message.edits[-1][0] == NOTE_TEXT
     assert message.edits[-1][1] == {"parse_mode": "HTML"}
     assert client.stt_calls[0]["language"] == "en"
-    assert "language of the transcript" in (
-        client.chat_calls[0]["messages"][0]["content"]
-    )
+    prompt = client.chat_calls[0]["messages"][0]["content"]
+    assert "Write every field in English" in prompt
 
 
 async def test_on_voice_ignores_non_voice_and_missing_user() -> None:
