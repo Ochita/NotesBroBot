@@ -20,6 +20,13 @@ notes using an OpenAI-compatible endpoint (speech-to-text + structured notes).
   - reply `/add` to the note message
   - send the next voice message
   - bot merges the new transcript into the note and edits the original message
+- User can fix a mis-transcribed note without retyping it:
+  - reply `/edit` to the note message
+  - bot replies with the numbered items
+  - send only the lines that change, one per line:
+    - `2 new text` replaces item 2, `-2` deletes it, `+ text` appends
+    - `t new title`, `l new heading` rewrite the headings
+  - bot rewrites the original message and confirms
 
 ## Project structure
 
@@ -129,7 +136,8 @@ docker compose down
 - `/help` show the commands
 - `/set_locale <code>` set the UI language (`en`, `ru`, `uk`, `it`, `fr`, `de`, `es`)
 - `/add` reply to a note message, then send next voice to merge into it
-- `/cancel` cancel a pending `/add` merge
+- `/edit` reply to a note message, then send `2 new text` to fix lines
+- `/cancel` cancel a pending `/add` merge or `/edit` batch
 
 ## Notes
 

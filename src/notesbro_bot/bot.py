@@ -21,6 +21,7 @@ from notesbro_bot.db import NoteRepository
 from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
+    apply_note_edits,
     merge_transcript_into_note_sync,
     parse_voice_note_from_message_text,
     summarize_transcript_to_note_sync,
@@ -41,6 +42,15 @@ _UD_ADD_STATUS_MESSAGE_ID = "add_status_message_id"
 
 _ADD_VOICE_TTL_SEC = 120.0
 
+# user_data keys for /edit: next message is a set of line edits.
+_UD_AWAITING_EDIT = "awaiting_edit"
+_UD_EDIT_DEADLINE_MONO = "awaiting_edit_deadline_mono"
+_UD_EDIT_TARGET_MESSAGE_ID = "edit_target_message_id"
+_UD_EDIT_PREVIOUS_NOTE_JSON = "edit_previous_note_json"
+_UD_EDIT_STATUS_MESSAGE_ID = "edit_status_message_id"
+
+_EDIT_TTL_SEC = 300.0
+
 
 def _disarm_add_voice(user_data: dict) -> None:
     user_data.pop(_UD_AWAITING_ADD_VOICE, None)
@@ -48,6 +58,27 @@ def _disarm_add_voice(user_data: dict) -> None:
     user_data.pop(_UD_ADD_TARGET_MESSAGE_ID, None)
     user_data.pop(_UD_ADD_PREVIOUS_NOTE_JSON, None)
     user_data.pop(_UD_ADD_STATUS_MESSAGE_ID, None)
+
+
+def _arm_edit(user_data: dict, ttl_sec: float = _EDIT_TTL_SEC) -> None:
+    user_data[_UD_AWAITING_EDIT] = True
+    user_data[_UD_EDIT_DEADLINE_MONO] = time.monotonic() + ttl_sec
+
+
+def _disarm_edit(user_data: dict) -> None:
+    user_data.pop(_UD_AWAITING_EDIT, None)
+    user_data.pop(_UD_EDIT_DEADLINE_MONO, None)
+    user_data.pop(_UD_EDIT_TARGET_MESSAGE_ID, None)
+    user_data.pop(_UD_EDIT_PREVIOUS_NOTE_JSON, None)
+    user_data.pop(_UD_EDIT_STATUS_MESSAGE_ID, None)
+
+
+def _edit_arm_expired(user_data: dict) -> bool:
+    deadline = user_data.get(_UD_EDIT_DEADLINE_MONO)
+    if deadline is None:
+        return True
+    return time.monotonic() > float(deadline)
+
 
 
 def _arm_add_voice(
@@ -249,9 +280,16 @@ async def cmd_cancel(
     ud = context.user_data
     if ud is None:
         return
-    had = bool(ud.get(_UD_AWAITING_ADD_VOICE))
+    had_edit = bool(ud.get(_UD_AWAITING_EDIT))
+    had_add = bool(ud.get(_UD_AWAITING_ADD_VOICE))
     _disarm_add_voice(ud)
-    key = "cancel_done" if had else "cancel_nothing"
+    _disarm_edit(ud)
+    if had_edit:
+        key = "edit_cancelled"
+    elif had_add:
+        key = "cancel_done"
+    else:
+        key = "cancel_nothing"
     await update.message.reply_text(translate(locale, key))
 
 
@@ -295,10 +333,12 @@ async def _show_status(
     reply_message: Message | None,
     edit_message_id: int | None,
     text: str,
+    parse_mode: str | None = None,
 ) -> None:
     """Update whichever progress message this flow is using."""
     if reply_message is not None:
-        await reply_message.edit_text(text)
+        kwargs = {"parse_mode": parse_mode} if parse_mode else {}
+        await reply_message.edit_text(text, **kwargs)
     elif edit_message_id is not None:
         await _safe_edit_message(
             context,
@@ -306,6 +346,119 @@ async def _show_status(
             message_id=int(edit_message_id),
             text=text,
         )
+
+
+async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if (
+        update.effective_user is None
+        or update.effective_chat is None
+        or update.message is None
+    ):
+        return
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
+        return
+    ud = context.user_data
+    if ud is None:
+        return
+
+    target = update.message.reply_to_message
+    previous = parse_voice_note_from_message_text(
+        (target.text if target else "") or ""
+    )
+    _disarm_add_voice(ud)
+    if target is None:
+        await update.message.reply_text(translate(locale, "edit_need_reply"))
+        return
+    if previous is None:
+        await update.message.reply_text(translate(locale, "edit_not_a_note"))
+        return
+
+    _arm_edit(ud)
+    ud[_UD_EDIT_TARGET_MESSAGE_ID] = int(target.message_id)
+    ud[_UD_EDIT_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
+    status = await update.message.reply_text(
+        _number_lines(previous) + "\n\n" + translate(locale, "edit_prompt")
+    )
+    ud[_UD_EDIT_STATUS_MESSAGE_ID] = int(status.message_id)
+
+
+async def on_edit_text(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    """Apply ``2 fixed text`` style line edits to the armed note."""
+    if not update.message or not update.message.text:
+        return
+    ud = context.user_data or {}
+    if not ud.get(_UD_AWAITING_EDIT):
+        return
+    if _edit_arm_expired(ud):
+        _disarm_edit(ud)
+        return
+    target_message_id = ud.get(_UD_EDIT_TARGET_MESSAGE_ID)
+    status_message_id = ud.get(_UD_EDIT_STATUS_MESSAGE_ID)
+    previous = _load_note(ud.get(_UD_EDIT_PREVIOUS_NOTE_JSON))
+    _disarm_edit(ud)
+    if target_message_id is None or previous is None:
+        return
+
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
+        return
+    chat_id = update.effective_chat.id
+    status = update.message.reply_to_message
+    if status is None or status.message_id != status_message_id:
+        status = await update.message.reply_text(
+            translate(locale, "edit_prompt")
+        )
+
+    edited, applied = apply_note_edits(previous, update.message.text)
+    if not applied:
+        await status.edit_text(translate(locale, "edit_nothing"))
+        return
+    if edited == previous:
+        # Telegram rejects a no-op edit with "message is not modified".
+        await status.edit_text(translate(locale, "edit_same"))
+        return
+
+    html_body = voice_note_to_telegram_html(edited)
+    try:
+        await context.bot.edit_message_text(
+            chat_id=chat_id,
+            message_id=int(target_message_id),
+            text=html_body,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as e:
+        LOGGER.exception("Telegram HTML edit failed")
+        await status.edit_text(
+            translate(locale, "err_format", error=str(e), transcript="")
+        )
+        return
+    if status_message_id is not None:
+        await _safe_delete_message(
+            context, chat_id=chat_id, message_id=int(status_message_id)
+        )
+    await update.message.reply_text(
+        translate(locale, "edit_done", count=str(applied))
+    )
+
+
+def _load_note(raw: object) -> VoiceNote | None:
+    """Decode the note JSON stashed in ``user_data`` when arming a flow."""
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return VoiceNote.model_validate_json(raw)
+    except Exception:
+        return None
+
+
+def _number_lines(note: VoiceNote) -> str:
+    return "\n".join(
+        f"{index}. {item}" for index, item in enumerate(note.items, start=1)
+    )
+
 
 
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -332,12 +485,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         else:
             target_message_id = ud.get(_UD_ADD_TARGET_MESSAGE_ID)
             add_status_message_id = ud.get(_UD_ADD_STATUS_MESSAGE_ID)
-            prev_json = ud.get(_UD_ADD_PREVIOUS_NOTE_JSON)
-            if isinstance(prev_json, str) and prev_json.strip():
-                try:
-                    previous = VoiceNote.model_validate_json(prev_json)
-                except Exception:
-                    previous = None
+            previous = _load_note(ud.get(_UD_ADD_PREVIOUS_NOTE_JSON))
             _disarm_add_voice(ud)
             merge = previous is not None
 
@@ -476,6 +624,10 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("help", cmd_help))
     application.add_handler(CommandHandler("set_locale", cmd_set_locale))
     application.add_handler(CommandHandler("add", cmd_add))
+    application.add_handler(CommandHandler("edit", cmd_edit))
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(MessageHandler(filters.VOICE, on_voice))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, on_edit_text)
+    )
     return application

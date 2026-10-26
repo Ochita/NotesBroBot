@@ -131,6 +131,64 @@ def voice_note_to_telegram_html(note: VoiceNote, max_len: int = 3900) -> str:
     return body[: max_len - 1] + "…"
 
 
+def apply_note_edits(note: VoiceNote, text: str) -> tuple[VoiceNote, int]:
+    """Apply line-level edits to a note.
+
+    Each non-empty line targets one bullet so nothing has to be retyped:
+    ``2 new text`` replaces, ``-2`` removes, ``+ text`` appends,
+    ``t title`` / ``l heading`` rewrite the headings. Edits apply in order.
+    Returns the note plus the number of applied edits (0 when nothing
+    matched a valid command).
+    """
+    title, heading = note.note_title, note.list_title
+    items = list(note.items)
+    applied = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line:
+            continue
+        if line.startswith("+") and len(line) > 1:
+            items.append(line[1:].strip())
+            applied += 1
+            continue
+        if line.startswith("-") and len(line) > 1:
+            index = _parse_item_number(line[1:].strip())
+            if index is not None and index < len(items):
+                del items[index]
+                applied += 1
+            continue
+        command, _, value = line.partition(" ")
+        value = value.strip()
+        lowered = command.lower()
+        if lowered in {"t", "title", "l", "list"} and value:
+            if lowered in {"t", "title"}:
+                title = value
+            else:
+                heading = value
+            applied += 1
+            continue
+        index = _parse_item_number(command)
+        if index is None or not value or index >= len(items):
+            continue
+        items[index] = value
+        applied += 1
+    note_out = VoiceNote(
+        note_title=title[:200],
+        list_title=heading[:200],
+        items=items[:16],
+    )
+    return note_out, applied
+
+
+def _parse_item_number(raw: str) -> int | None:
+    """Map a 1-based user-facing bullet number to a 0-based index."""
+    try:
+        number = int(raw)
+    except ValueError:
+        return None
+    return number - 1 if number >= 1 else None
+
+
 def parse_voice_note_from_message_text(text: str) -> VoiceNote | None:
     """Best-effort parse of a bot note message back into a VoiceNote.
 

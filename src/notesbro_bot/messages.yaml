@@ -13,6 +13,7 @@ en:
     /start - subscribe and get usage help
     /add - reply to a note, then send a voice message to merge into it
     /cancel - cancel an armed /add
+    /edit - reply to a note, then send `2 new text` to fix one line
     /set_locale <code> - set your language
 
     Notes are written in the language of your voice message.
@@ -22,6 +23,24 @@ en:
     message previously sent by this bot.
   add_armed: |-
     OK. Send 1 voice within {ttl}s to merge. Use /cancel to stop.
+  edit_need_reply: Reply /edit to the note message you want to fix.
+  edit_not_a_note: |-
+    I couldn't parse that replied message as a note. Reply /edit to a note
+    message previously sent by this bot.
+  edit_prompt: |-
+    Send the lines to fix, one per line. Only the line you name changes:
+    2 new text - replace item 2
+    -2 - delete item 2
+    + some text - add a new item
+    t new title - replace the note title
+    l new heading - replace the list heading
+
+    /cancel to stop.
+  edit_done: "Note updated. Lines changed: {count}"
+  edit_nothing: |-
+    No valid edits found. Example: `2 corrected text`, `-1`, `+ new item`.
+  edit_same: Note already looks like that; nothing to change.
+  edit_cancelled: Edit cancelled.
   cancel_done: Cancelled merge mode.
   cancel_nothing: Nothing to cancel.
   status_transcribing: Transcribing…
@@ -57,6 +76,7 @@ ru:
     /start - подписаться и получить справку
     /add - ответьте на заметку, затем отправьте голосовое для дополнения
     /cancel - отменить подготовленный /add
+    /edit - ответьте на заметку и пришлите `2 новый текст`, чтобы исправить строку
     /set_locale <код> - установить язык
 
     Заметки пишутся на языке вашего голосового сообщения.
@@ -67,6 +87,26 @@ ru:
   add_armed: |-
     ОК. Отправьте 1 голосовое в течение {ttl} с для дополнения.
     /cancel - отменить.
+  edit_need_reply: Ответьте /edit на сообщение с заметкой, которую хотите исправить.
+  edit_not_a_note: |-
+    Не удалось распознать в этом сообщении заметку. Ответьте /edit на
+    сообщение с заметкой, которое отправлял этот бот.
+  edit_prompt: |-
+    Пришлите строки для правки — по одной на строку.
+    Меняется только та строка, которую вы указали:
+    2 новый текст - заменить пункт 2
+    -2 - удалить пункт 2
+    + новый пункт - добавить пункт
+    t новый заголовок - заменить заголовок заметки
+    l новый подзаголовок - заменить подзаголовок списка
+
+    /cancel - отменить.
+  edit_done: "Заметка обновлена. Изменено строк: {count}"
+  edit_nothing: |-
+    Не нашел корректных правок. Пример: `2 исправленный текст`, `-1`,
+    `+ новый пункт`.
+  edit_same: В заметке уже так и написано, менять нечего.
+  edit_cancelled: Правка отменена.
   cancel_done: Режим дополнения отменен.
   cancel_nothing: Нечего отменять.
   status_transcribing: Расшифровываю…
@@ -102,6 +142,7 @@ uk:
     /start - підписатися та отримати довідку
     /add - відповідайте на нотатку, потім надішліть голосове для доповнення
     /cancel - скасувати підготовлений /add
+    /edit - дайте відповідь на нотатку й надішліть `2 новий текст`, щоб виправити рядок
     /set_locale <код> - встановити мову
 
     Нотатки пишуться мовою вашого голосового повідомлення.
@@ -112,6 +153,26 @@ uk:
   add_armed: |-
     Гаразд. Надішліть 1 голосове протягом {ttl} с для доповнення.
     /cancel - скасувати.
+  edit_need_reply: Дайте відповідь /edit на повідомлення з нотаткою, яку хочете виправити.
+  edit_not_a_note: |-
+    Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь
+    /edit на повідомлення з нотаткою, яке надсилав цей бот.
+  edit_prompt: |-
+    Надішліть рядки для правки — по одному на рядок.
+    Змінюється лише той рядок, який ви вказали:
+    2 новий текст - замінити пункт 2
+    -2 - видалити пункт 2
+    + новий пункт - додати пункт
+    t новий заголовок - замінити заголовок нотатки
+    l новий підзаголовок - замінити підзаголовок списку
+
+    /cancel - скасувати.
+  edit_done: "Нотатку оновлено. Змінено рядків: {count}"
+  edit_nothing: |-
+    Не знайшов коректних правок. Приклад: `2 виправлений текст`, `-1`,
+    `+ новий пункт`.
+  edit_same: У нотатці вже так написано, змінювати нічого.
+  edit_cancelled: Правку скасовано.
   cancel_done: Режим доповнення скасовано.
   cancel_nothing: Немає що скасовувати.
   status_transcribing: Розшифровую…
@@ -147,6 +208,7 @@ it:
     /start - attiva l'iscrizione e mostra la guida
     /add - rispondi a una nota, poi invia un vocale da unire
     /cancel - annulla un /add preparato
+    /edit - rispondi a una nota e invia `2 nuovo testo` per correggere una riga
     /set_locale <codice> - imposta la lingua
 
     Le note sono scritte nella lingua del tuo messaggio vocale.
@@ -156,6 +218,25 @@ it:
     a un messaggio di nota inviato da questo bot.
   add_armed: |-
     OK. Invia 1 vocale entro {ttl}s per unire. Usa /cancel per fermarti.
+  edit_need_reply: Rispondi /edit al messaggio della nota che vuoi correggere.
+  edit_not_a_note: |-
+    Non riesco a interpretare quel messaggio come una nota. Rispondi /edit
+    a un messaggio di nota inviato da questo bot.
+  edit_prompt: |-
+    Invia le righe da correggere, una per riga. Cambia solo la riga indicata:
+    2 nuovo testo - sostituisci il punto 2
+    -2 - elimina il punto 2
+    + nuovo punto - aggiungi un punto
+    t nuovo titolo - sostituisci il titolo della nota
+    l nuova intestazione - sostituisci l'intestazione dell'elenco
+
+    /cancel per fermarti.
+  edit_done: "Nota aggiornata. Righe modificate: {count}"
+  edit_nothing: |-
+    Nessuna correzione valida. Esempio: `2 testo corretto`, `-1`,
+    `+ nuovo punto`.
+  edit_same: La nota è già così, niente da cambiare.
+  edit_cancelled: Correzione annullata.
   cancel_done: Modalità unione annullata.
   cancel_nothing: Niente da annullare.
   status_transcribing: Trascrivo…
@@ -191,6 +272,7 @@ fr:
     /start - s'abonner et afficher l'aide
     /add - répondre à une note, puis envoyer un vocal à fusionner
     /cancel - annuler un /add préparé
+    /edit - répondez à une note puis envoyez `2 nouveau texte` pour corriger une ligne
     /set_locale <code> - définir la langue
 
     Les notes sont rédigées dans la langue de votre message vocal.
@@ -200,6 +282,26 @@ fr:
     à un message de note envoyé par ce bot.
   add_armed: |-
     OK. Envoyez 1 vocal dans les {ttl}s pour fusionner. /cancel pour arrêter.
+  edit_need_reply: Répondez /edit au message de la note à corriger.
+  edit_not_a_note: |-
+    Je n'ai pas pu interpréter ce message comme une note. Répondez /edit
+    à un message de note envoyé par ce bot.
+  edit_prompt: |-
+    Envoyez les lignes à corriger, une par ligne.
+    Seule la ligne indiquée change :
+    2 nouveau texte - remplacer le point 2
+    -2 - supprimer le point 2
+    + nouveau point - ajouter un point
+    t nouveau titre - remplacer le titre de la note
+    l nouvel en-tête - remplacer l'en-tête de la liste
+
+    /cancel pour arrêter.
+  edit_done: "Note mise à jour. Lignes modifiées : {count}"
+  edit_nothing: |-
+    Aucune correction valide. Exemple : `2 texte corrigé`, `-1`,
+    `+ nouveau point`.
+  edit_same: La note est déjà ainsi, rien à changer.
+  edit_cancelled: Correction annulée.
   cancel_done: Mode fusion annulé.
   cancel_nothing: Rien à annuler.
   status_transcribing: Transcription…
@@ -235,6 +337,7 @@ de:
     /start - Abonnement und Hilfe
     /add - auf eine Notiz antworten, dann Sprachnachricht zum Ergänzen senden
     /cancel - vorbereitetes /add abbrechen
+    /edit - auf eine Notiz antworten, dann `2 neuer Text` zum Korrigieren senden
     /set_locale <Code> - Sprache festlegen
 
     Notizen werden in der Sprache deiner Sprachnachricht verfasst.
@@ -245,6 +348,26 @@ de:
   add_armed: |-
     OK. Sende 1 Sprachnachricht innerhalb von {ttl}s zum Ergänzen.
     /cancel zum Abbrechen.
+  edit_need_reply: Antworte mit /edit auf die Notiznachricht, die du ändern willst.
+  edit_not_a_note: |-
+    Ich konnte diese Nachricht nicht als Notiz lesen. Antworte mit /edit auf
+    eine Notiznachricht, die dieser Bot gesendet hat.
+  edit_prompt: |-
+    Sende die zu ändernden Zeilen, eine pro Zeile.
+    Nur die genannte Zeile ändert sich:
+    2 neuer Text - Punkt 2 ersetzen
+    -2 - Punkt 2 löschen
+    + neuer Punkt - Punkt hinzufügen
+    t neuer Titel - Titel der Notiz ersetzen
+    l neue Überschrift - Listenüberschrift ersetzen
+
+    /cancel zum Abbrechen.
+  edit_done: "Notiz aktualisiert. Geänderte Zeilen: {count}"
+  edit_nothing: |-
+    Keine gültigen Änderungen gefunden. Beispiel: `2 korrigierter Text`,
+    `-1`, `+ neuer Punkt`.
+  edit_same: Die Notiz sieht schon so aus, nichts zu ändern.
+  edit_cancelled: Änderung abgebrochen.
   cancel_done: Ergänzungsmodus abgebrochen.
   cancel_nothing: Nichts abzubrechen.
   status_transcribing: Transkribiere…
@@ -280,6 +403,7 @@ es:
     /start - suscribirse y ver la ayuda
     /add - responder a una nota y enviar un audio para unirlo
     /cancel - cancelar un /add preparado
+    /edit - responde a una nota y envía `2 texto nuevo` para corregir una línea
     /set_locale <código> - configurar el idioma
 
     Las notas se escriben en el idioma de tu mensaje de voz.
@@ -289,6 +413,26 @@ es:
     mensaje de nota enviado por este bot.
   add_armed: |-
     OK. Envía 1 audio en {ttl}s para unirlo. Usa /cancel para parar.
+  edit_need_reply: Responde /edit al mensaje de la nota que quieres corregir.
+  edit_not_a_note: |-
+    No pude interpretar ese mensaje como una nota. Responde /edit a un
+    mensaje de nota enviado por este bot.
+  edit_prompt: |-
+    Envía las líneas a corregir, una por línea.
+    Solo cambia la línea que indiques:
+    2 texto nuevo - reemplazar el punto 2
+    -2 - eliminar el punto 2
+    + nuevo punto - añadir un punto
+    t nuevo título - reemplazar el título de la nota
+    l nuevo encabezado - reemplazar el encabezado de la lista
+
+    /cancel para parar.
+  edit_done: "Nota actualizada. Líneas cambiadas: {count}"
+  edit_nothing: |-
+    No encontré correcciones válidas. Ejemplo: `2 texto corregido`, `-1`,
+    `+ nuevo punto`.
+  edit_same: La nota ya dice eso, no hay nada que cambiar.
+  edit_cancelled: Corrección cancelada.
   cancel_done: Modo de unión cancelado.
   cancel_nothing: Nada que cancelar.
   status_transcribing: Transcribiendo…
