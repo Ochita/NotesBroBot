@@ -5,6 +5,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from notesbro_bot.i18n import translate
 from notesbro_bot.models import VoiceNote
 
 if TYPE_CHECKING:
@@ -14,8 +15,9 @@ LOGGER = logging.getLogger(__name__)
 
 _API_RETRIES = 3
 
-
-def _complete_note(client: "OpenAI", model: str, prompt: str) -> VoiceNote:
+def _complete_note(
+    client: "OpenAI", model: str, prompt: str, locale: str
+) -> VoiceNote:
     for attempt in range(1, _API_RETRIES + 1):
         try:
             response = client.chat.completions.parse(
@@ -26,10 +28,12 @@ def _complete_note(client: "OpenAI", model: str, prompt: str) -> VoiceNote:
             message = response.choices[0].message
             parsed = message.parsed
             if isinstance(parsed, VoiceNote):
-                return _normalize_note(parsed)
+                return _normalize_note(parsed, locale)
             text = (message.content or "").strip()
             if text:
-                return _normalize_note(VoiceNote.model_validate_json(text))
+                return _normalize_note(
+                    VoiceNote.model_validate_json(text), locale
+                )
             LOGGER.warning("Structured note response empty.")
             raise ValueError("Model returned no structured note.")
         except Exception:
@@ -45,7 +49,9 @@ Rules:
 - note_title: a clear title for the whole note.
 - list_title: one heading for the bullet list (not a repeat of note_title).
 - items: 3 to 8 short bullets. One idea per line.
-- Use the same language as the transcript when possible.
+- Write every field in the language of the transcript. If the speaker
+  switches languages, follow the dominant one. Never answer in English unless
+  the transcript is English.
 - Do not invent facts; only summarize what is implied or stated.
 """
 
@@ -56,12 +62,13 @@ You will be given the existing note as JSON, then the new transcript in plain
 text.
 
 Return one updated VoiceNote: refine note_title if needed, one list_title,
-and a merged
-items list.
+and a merged items list.
 
 Remove clear duplicates; keep facts from both the prior note and the new
 transcript.
-Prefer roughly 4–14 bullets; stay within the schema max length.
+Write every field in the language of the new transcript, even if the existing
+note is in another language.
+Prefer roughly 4-14 bullets; stay within the schema max length.
 """
 
 
@@ -70,6 +77,7 @@ def merge_transcript_into_note_sync(
     model_name: str,
     previous: VoiceNote,
     new_transcript: str,
+    locale: str | None = None,
 ) -> VoiceNote:
     prompt = (
         _MERGE_INSTRUCTION
@@ -78,24 +86,29 @@ def merge_transcript_into_note_sync(
         + "\n\nNew transcript:\n"
         + new_transcript
     )
-    return _complete_note(client, model_name, prompt)
+    return _complete_note(client, model_name, prompt, locale or "en")
 
 
 def summarize_transcript_to_note_sync(
     client: "OpenAI",
     model_name: str,
     transcript: str,
+    locale: str | None = None,
 ) -> VoiceNote:
     prompt = f"{_SUMMARY_INSTRUCTION}\n\nTranscript:\n{transcript}"
-    return _complete_note(client, model_name, prompt)
+    return _complete_note(client, model_name, prompt, locale or "en")
 
 
-def _normalize_note(note: VoiceNote) -> VoiceNote:
-    title = note.note_title.strip() or "Untitled note"
-    list_heading = note.list_title.strip() or "Summary"
+def _normalize_note(note: VoiceNote, locale: str | None = None) -> VoiceNote:
+    title = note.note_title.strip() or translate(
+        locale or "en", "note_untitled"
+    )
+    list_heading = note.list_title.strip() or translate(
+        locale or "en", "note_summary_heading"
+    )
     items = [s.strip() for s in note.items if s.strip()]
     if not items:
-        items = ["(No distinct points extracted from the transcript.)"]
+        items = [translate(locale or "en", "note_no_items")]
     return VoiceNote(
         note_title=title,
         list_title=list_heading,

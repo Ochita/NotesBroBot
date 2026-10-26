@@ -5,6 +5,8 @@ from pathlib import Path
 
 import yaml
 
+from notesbro_bot.i18n import supported_locales
+
 _DEFAULT_BASE_URL = "https://api.aitunnel.ru/v1/"
 _DEFAULT_STT_MODEL = "voxtral-small-24b-2507-stt"
 _DEFAULT_MODEL_NAME = "deepseek-v4-flash"
@@ -21,6 +23,8 @@ class Settings:
     #: Chat model id on that endpoint. Turns a transcript into a note.
     model_name: str
     database_path: str
+    #: Fallback UI language when a user has none stored or set on Telegram.
+    default_locale: str
     #: When false, only users already present in the users table may use it.
     allow_new_users: bool
 
@@ -53,6 +57,8 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
     if not database_path:
         raise ValueError("database_path cannot be empty in YAML config.")
 
+    default_locale = _default_locale(data)
+
     allow_new_users = data.get("allow_new_users", True)
     if not isinstance(allow_new_users, bool):
         raise ValueError(
@@ -66,6 +72,7 @@ def load_settings(config_path: str = "config/settings.yaml") -> Settings:
         stt_model=stt_model,
         model_name=model_name,
         database_path=database_path,
+        default_locale=default_locale,
         allow_new_users=allow_new_users,
     )
 
@@ -91,3 +98,12 @@ def _model_id(data: dict, key: str, default: str) -> str:
     if not model:
         raise ValueError(f"Missing {key} in YAML config.")
     return model
+
+
+def _default_locale(data: dict) -> str:
+    raw = data.get("default_locale", "en")
+    locale = str(raw).strip().lower().split("-", maxsplit=1)[0]
+    if locale not in supported_locales():
+        known = ", ".join(sorted(supported_locales()))
+        raise ValueError(f"default_locale must be one of: {known}.")
+    return locale

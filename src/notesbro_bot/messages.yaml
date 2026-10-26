@@ -1,0 +1,310 @@
+en:
+  access_closed: |-
+    This bot is not accepting new users. Only existing users may use it.
+  start: |-
+    Send a voice message. I will transcribe it and reply with summarized
+    notes: a note title, a list heading, and bullet points.
+
+    To extend a note: reply /add to the note message you want to update,
+    then send your next voice message within two minutes. /cancel clears an
+    armed /add. (No message ids are stored.)
+  help: |-
+    Commands:
+    /start - subscribe and get usage help
+    /add - reply to a note, then send a voice message to merge into it
+    /cancel - cancel an armed /add
+    /set_locale <code> - set your language
+
+    Notes are written in the language of your voice message.
+  add_need_reply: Reply /add to the note message you want to update.
+  add_not_a_note: |-
+    I couldn't parse that replied message as a note. Reply /add to a note
+    message previously sent by this bot.
+  add_armed: |-
+    OK. Send 1 voice within {ttl}s to merge. Use /cancel to stop.
+  cancel_done: Cancelled merge mode.
+  cancel_nothing: Nothing to cancel.
+  status_transcribing: Transcribing…
+  status_transcribing_addon: Transcribing add-on…
+  status_summarizing: Summarizing into notes…
+  status_merging: Merging into your note…
+  err_download: "Could not download the voice file: {error}"
+  err_transcribe: "Transcription failed: {error}"
+  err_notes: "Could not build notes: {error}"
+  err_format: "(Could not send formatted notes: {error})\n\n{transcript}"
+  no_speech: "(No speech recognized; try again or speak closer.)"
+  set_locale_missing: |-
+    Provide a language code, for example:
+    /set_locale en
+  set_locale_invalid: "Unknown language. Use en, ru, uk, it, fr, de, or es."
+  set_locale_saved: "Language saved: {code}"
+  note_untitled: Untitled note
+  note_summary_heading: Summary
+  note_no_items: (No distinct points extracted from the transcript.)
+
+ru:
+  access_closed: |-
+    Бот не принимает новых пользователей. Доступ только у уже зарегистрированных.
+  start: |-
+    Отправьте голосовое сообщение. Я расшифрую его и отвечу
+    структурированной заметкой: заголовок, подзаголовок списка и пункты.
+
+    Чтобы дополнить заметку: ответьте /add на сообщение с заметкой
+    и отправьте следующее голосовое в течение двух минут. /cancel снимает
+    режим /add. (Идентификаторы сообщений не сохраняются.)
+  help: |-
+    Команды:
+    /start - подписаться и получить справку
+    /add - ответьте на заметку, затем отправьте голосовое для дополнения
+    /cancel - отменить подготовленный /add
+    /set_locale <код> - установить язык
+
+    Заметки пишутся на языке вашего голосового сообщения.
+  add_need_reply: Ответьте /add на сообщение с заметкой, которую хотите дополнить.
+  add_not_a_note: |-
+    Не удалось распознать в этом сообщении заметку. Ответьте /add на
+    сообщение с заметкой, которое отправлял этот бот.
+  add_armed: |-
+    ОК. Отправьте 1 голосовое в течение {ttl} с для дополнения.
+    /cancel - отменить.
+  cancel_done: Режим дополнения отменен.
+  cancel_nothing: Нечего отменять.
+  status_transcribing: Расшифровываю…
+  status_transcribing_addon: Расшифровываю дополнение…
+  status_summarizing: Собираю заметку…
+  status_merging: Дополняю заметку…
+  err_download: "Не удалось скачать голосовой файл: {error}"
+  err_transcribe: "Не удалось расшифровать: {error}"
+  err_notes: "Не удалось собрать заметку: {error}"
+  err_format: "(Не удалось отправить оформленную заметку: {error})\n\n{transcript}"
+  no_speech: "(Речь не распознана; попробуйте ещё раз или говорите ближе.)"
+  set_locale_missing: |-
+    Укажите код языка, например:
+    /set_locale ru
+  set_locale_invalid: "Неизвестный язык. Доступны en, ru, uk, it, fr, de, es."
+  set_locale_saved: "Язык сохранен: {code}"
+  note_untitled: Заметка без названия
+  note_summary_heading: Итоги
+  note_no_items: (Из расшифровки не удалось выделить отдельные пункты.)
+
+uk:
+  access_closed: |-
+    Бот не приймає нових користувачів. Доступ лише для вже зареєстрованих.
+  start: |-
+    Надішліть голосове повідомлення. Я розшифрую його й відповім
+    структурованою нотаткою: заголовок, підзаголовок списку та пункти.
+
+    Щоб доповнити нотатку: дайте відповідь /add на повідомлення з нотаткою
+    й надішліть наступне голосове протягом двох хвилин. /cancel скасовує
+    режим /add. (Ідентифікатори повідомлень не зберігаються.)
+  help: |-
+    Команди:
+    /start - підписатися та отримати довідку
+    /add - відповідайте на нотатку, потім надішліть голосове для доповнення
+    /cancel - скасувати підготовлений /add
+    /set_locale <код> - встановити мову
+
+    Нотатки пишуться мовою вашого голосового повідомлення.
+  add_need_reply: Дайте відповідь /add на повідомлення з нотаткою, яку хочете доповнити.
+  add_not_a_note: |-
+    Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь
+    /add на повідомлення з нотаткою, яке надсилав цей бот.
+  add_armed: |-
+    Гаразд. Надішліть 1 голосове протягом {ttl} с для доповнення.
+    /cancel - скасувати.
+  cancel_done: Режим доповнення скасовано.
+  cancel_nothing: Немає що скасовувати.
+  status_transcribing: Розшифровую…
+  status_transcribing_addon: Розшифровую доповнення…
+  status_summarizing: Збираю нотатку…
+  status_merging: Доповнюю нотатку…
+  err_download: "Не вдалося завантажити голосовий файл: {error}"
+  err_transcribe: "Не вдалося розшифрувати: {error}"
+  err_notes: "Не вдалося зібрати нотатку: {error}"
+  err_format: "(Не вдалося надіслати оформлену нотатку: {error})\n\n{transcript}"
+  no_speech: "(Мову не розпізнано; спробуйте ще раз або говоріть ближче.)"
+  set_locale_missing: |-
+    Вкажіть код мови, наприклад:
+    /set_locale uk
+  set_locale_invalid: "Невідома мова. Доступні en, ru, uk, it, fr, de, es."
+  set_locale_saved: "Мову збережено: {code}"
+  note_untitled: Нотатка без назви
+  note_summary_heading: Підсумки
+  note_no_items: (З розшифровки не вдалося виділити окремі пункти.)
+
+it:
+  access_closed: |-
+    Il bot non accetta nuovi utenti. Solo gli utenti già registrati possono usarlo.
+  start: |-
+    Invia un messaggio vocale. Lo trascriverò e risponderò con una nota
+    strutturata: titolo, intestazione dell'elenco e punti.
+
+    Per estendere una nota: rispondi /add al messaggio della nota, poi invia
+    il vocale successivo entro due minuti. /cancel annulla la modalità /add.
+    (Nessun id dei messaggi viene salvato.)
+  help: |-
+    Comandi:
+    /start - attiva l'iscrizione e mostra la guida
+    /add - rispondi a una nota, poi invia un vocale da unire
+    /cancel - annulla un /add preparato
+    /set_locale <codice> - imposta la lingua
+
+    Le note sono scritte nella lingua del tuo messaggio vocale.
+  add_need_reply: Rispondi /add al messaggio della nota che vuoi aggiornare.
+  add_not_a_note: |-
+    Non riesco a interpretare quel messaggio come una nota. Rispondi /add
+    a un messaggio di nota inviato da questo bot.
+  add_armed: |-
+    OK. Invia 1 vocale entro {ttl}s per unire. Usa /cancel per fermarti.
+  cancel_done: Modalità unione annullata.
+  cancel_nothing: Niente da annullare.
+  status_transcribing: Trascrivo…
+  status_transcribing_addon: Trascrivo l'aggiunta…
+  status_summarizing: Preparo la nota…
+  status_merging: Unisco alla nota…
+  err_download: "Impossibile scaricare il file vocale: {error}"
+  err_transcribe: "Trascrizione non riuscita: {error}"
+  err_notes: "Impossibile creare la nota: {error}"
+  err_format: "(Impossibile inviare la nota formattata: {error})\n\n{transcript}"
+  no_speech: "(Nessuna voce riconosciuta; riprova o parla più vicino.)"
+  set_locale_missing: |-
+    Indica il codice della lingua, per esempio:
+    /set_locale it
+  set_locale_invalid: "Lingua sconosciuta. Usa en, ru, uk, it, fr, de o es."
+  set_locale_saved: "Lingua salvata: {code}"
+  note_untitled: Nota senza titolo
+  note_summary_heading: Riepilogo
+  note_no_items: (Nessun punto distinto estratto dalla trascrizione.)
+
+fr:
+  access_closed: |-
+    Ce bot n'accepte pas de nouveaux utilisateurs. Seuls les utilisateurs existants peuvent l'utiliser.
+  start: |-
+    Envoyez un message vocal. Je le transcrirai et répondrai avec une note
+    structurée : titre, en-tête de liste et points.
+
+    Pour compléter une note : répondez /add au message de la note, puis
+    envoyez le vocal suivant dans les deux minutes. /cancel annule le mode
+    /add. (Aucun id de message n'est stocké.)
+  help: |-
+    Commandes :
+    /start - s'abonner et afficher l'aide
+    /add - répondre à une note, puis envoyer un vocal à fusionner
+    /cancel - annuler un /add préparé
+    /set_locale <code> - définir la langue
+
+    Les notes sont rédigées dans la langue de votre message vocal.
+  add_need_reply: Répondez /add au message de la note à mettre à jour.
+  add_not_a_note: |-
+    Je n'ai pas pu interpréter ce message comme une note. Répondez /add
+    à un message de note envoyé par ce bot.
+  add_armed: |-
+    OK. Envoyez 1 vocal dans les {ttl}s pour fusionner. /cancel pour arrêter.
+  cancel_done: Mode fusion annulé.
+  cancel_nothing: Rien à annuler.
+  status_transcribing: Transcription…
+  status_transcribing_addon: Transcription de l'ajout…
+  status_summarizing: Préparation de la note…
+  status_merging: Fusion dans votre note…
+  err_download: "Impossible de télécharger le fichier vocal : {error}"
+  err_transcribe: "Échec de la transcription : {error}"
+  err_notes: "Impossible de créer la note : {error}"
+  err_format: "(Impossible d'envoyer la note formatée : {error})\n\n{transcript}"
+  no_speech: "(Aucune parole reconnue ; réessayez ou parlez plus près.)"
+  set_locale_missing: |-
+    Indiquez un code de langue, par exemple :
+    /set_locale fr
+  set_locale_invalid: "Langue inconnue. Utilisez en, ru, uk, it, fr, de ou es."
+  set_locale_saved: "Langue enregistrée : {code}"
+  note_untitled: Note sans titre
+  note_summary_heading: Résumé
+  note_no_items: (Aucun point distinct extrait de la transcription.)
+
+de:
+  access_closed: |-
+    Dieser Bot nimmt keine neuen Nutzer an. Nur bestehende Nutzer können ihn verwenden.
+  start: |-
+    Sende eine Sprachnachricht. Ich transkribiere sie und antworte mit einer
+    strukturierten Notiz: Titel, Listenüberschrift und Stichpunkten.
+
+    Zum Ergänzen einer Notiz: antworte mit /add auf die Notiznachricht und
+    sende die nächste Sprachnachricht innerhalb von zwei Minuten. /cancel
+    hebt ein vorbereitetes /add auf. (Es werden keine Message-IDs gespeichert.)
+  help: |-
+    Befehle:
+    /start - Abonnement und Hilfe
+    /add - auf eine Notiz antworten, dann Sprachnachricht zum Ergänzen senden
+    /cancel - vorbereitetes /add abbrechen
+    /set_locale <Code> - Sprache festlegen
+
+    Notizen werden in der Sprache deiner Sprachnachricht verfasst.
+  add_need_reply: Antworte mit /add auf die Notiznachricht, die du ändern willst.
+  add_not_a_note: |-
+    Ich konnte diese Nachricht nicht als Notiz lesen. Antworte mit /add auf
+    eine Notiznachricht, die dieser Bot gesendet hat.
+  add_armed: |-
+    OK. Sende 1 Sprachnachricht innerhalb von {ttl}s zum Ergänzen.
+    /cancel zum Abbrechen.
+  cancel_done: Ergänzungsmodus abgebrochen.
+  cancel_nothing: Nichts abzubrechen.
+  status_transcribing: Transkribiere…
+  status_transcribing_addon: Transkribiere Ergänzung…
+  status_summarizing: Erstelle Notiz…
+  status_merging: Ergänze Notiz…
+  err_download: "Sprachdatei konnte nicht geladen werden: {error}"
+  err_transcribe: "Transkription fehlgeschlagen: {error}"
+  err_notes: "Notiz konnte nicht erstellt werden: {error}"
+  err_format: "(Formatierte Notiz konnte nicht gesendet werden: {error})\n\n{transcript}"
+  no_speech: "(Keine Sprache erkannt; versuche es erneut oder sprich näher.)"
+  set_locale_missing: |-
+    Gib einen Sprachcode an, zum Beispiel:
+    /set_locale de
+  set_locale_invalid: "Unbekannte Sprache. Nutze en, ru, uk, it, fr, de oder es."
+  set_locale_saved: "Sprache gespeichert: {code}"
+  note_untitled: Notiz ohne Titel
+  note_summary_heading: Zusammenfassung
+  note_no_items: (Keine eigenständigen Punkte aus der Transkription erkannt.)
+
+es:
+  access_closed: |-
+    Este bot no acepta usuarios nuevos. Solo pueden usarlo usuarios ya registrados.
+  start: |-
+    Envía un mensaje de voz. Lo transcribiré y responderé con una nota
+    estructurada: título, encabezado de la lista y puntos.
+
+    Para ampliar una nota: responde /add al mensaje de la nota y envía el
+    siguiente audio en menos de dos minutos. /cancel anula el modo /add.
+    (No se guardan ids de mensajes.)
+  help: |-
+    Comandos:
+    /start - suscribirse y ver la ayuda
+    /add - responder a una nota y enviar un audio para unirlo
+    /cancel - cancelar un /add preparado
+    /set_locale <código> - configurar el idioma
+
+    Las notas se escriben en el idioma de tu mensaje de voz.
+  add_need_reply: Responde /add al mensaje de la nota que quieres actualizar.
+  add_not_a_note: |-
+    No pude interpretar ese mensaje como una nota. Responde /add a un
+    mensaje de nota enviado por este bot.
+  add_armed: |-
+    OK. Envía 1 audio en {ttl}s para unirlo. Usa /cancel para parar.
+  cancel_done: Modo de unión cancelado.
+  cancel_nothing: Nada que cancelar.
+  status_transcribing: Transcribiendo…
+  status_transcribing_addon: Transcribiendo el añadido…
+  status_summarizing: Preparando la nota…
+  status_merging: Uniendo a tu nota…
+  err_download: "No se pudo descargar el archivo de voz: {error}"
+  err_transcribe: "Falló la transcripción: {error}"
+  err_notes: "No se pudo crear la nota: {error}"
+  err_format: "(No se pudo enviar la nota formateada: {error})\n\n{transcript}"
+  no_speech: "(No se reconoció voz; inténtalo otra vez o habla más cerca.)"
+  set_locale_missing: |-
+    Indica un código de idioma, por ejemplo:
+    /set_locale es
+  set_locale_invalid: "Idioma desconocido. Usa en, ru, uk, it, fr, de o es."
+  set_locale_saved: "Idioma guardado: {code}"
+  note_untitled: Nota sin título
+  note_summary_heading: Resumen
+  note_no_items: (No se extrajeron puntos distintos de la transcripción.)

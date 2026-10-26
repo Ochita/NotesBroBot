@@ -7,12 +7,15 @@ notes using an OpenAI-compatible endpoint (speech-to-text + structured notes).
 
 - User subscribes with `/start` (optional whitelist/registration blocking supported)
 - User sends a voice message
-- Bot transcribes audio via `/audio/transcriptions` (`stt_model`, Russian)
+- Bot transcribes audio via `/audio/transcriptions` (`stt_model`, language
+  auto-detected so notes answer in the language you spoke)
 - Bot converts the transcript into a structured note:
   - `note_title`
   - `list_title`
   - bullet `items`
 - Bot replies with a formatted note message (Telegram HTML)
+- All bot messages and errors are localized (`en`, `ru`, `uk`, `it`, `fr`,
+  `de`, `es`); `/set_locale` switches the UI language per user
 - User can update an existing note:
   - reply `/add` to the note message
   - send the next voice message
@@ -26,6 +29,8 @@ src/notesbro_bot/
   main.py
   config.py
   db.py
+  i18n.py
+  messages.yaml
   models.py
   note_summary.py
   bot.py
@@ -58,6 +63,8 @@ Edit `config/settings.yaml` with your secrets:
 - `base_url` (optional, default `https://api.aitunnel.ru/v1/`)
 - `stt_model` (speech model; default `voxtral-small-24b-2507-stt`)
 - `model_name` (chat model; default `deepseek-v4-flash`, turns the transcript into a note)
+- `default_locale` (optional, default `en`) — fallback UI language used when
+  the user has not chosen one and Telegram reports no supported language
 
 ## Run
 
@@ -119,13 +126,18 @@ docker compose down
 ## Commands
 
 - `/start` subscribe user (and pass whitelist check if enabled)
+- `/help` show the commands
+- `/set_locale <code>` set the UI language (`en`, `ru`, `uk`, `it`, `fr`, `de`, `es`)
 - `/add` reply to a note message, then send next voice to merge into it
 - `/cancel` cancel a pending `/add` merge
 
 ## Notes
 
 - Config is read from YAML via `yaml.safe_load` (no `.env` loading).
-- The bot uses SQLite only for user whitelist/registration (`allow_new_users`).
+- The bot uses SQLite only for user whitelist/registration (`allow_new_users`)
+  and the chosen locale.
+- UI text lives in `src/notesbro_bot/messages.yaml`; notes themselves always
+  follow the language of the voice message.
 - API requests retry up to 3 times for transient failures.
 - `/add` works without storing message ids in the database:
   it parses the replied note message and edits that message via Telegram API.
@@ -138,9 +150,10 @@ Install dev tools:
 pip install -e ".[dev]"
 ```
 
-Run tests:
+Run tests (coverage floor is 91%, enforced by `--cov-fail-under`):
 
 ```bash
 pytest
+ruff check src tests
 ```
 

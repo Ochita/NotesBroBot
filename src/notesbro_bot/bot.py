@@ -6,7 +6,7 @@ import time
 from io import BytesIO
 
 from openai import OpenAI
-from telegram import Update
+from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
     Application,
@@ -18,6 +18,8 @@ from telegram.ext import (
 
 from notesbro_bot.config import Settings
 from notesbro_bot.db import NoteRepository
+from notesbro_bot.i18n import detect_locale, supported_locales, translate
+from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
     merge_transcript_into_note_sync,
     parse_voice_note_from_message_text,
@@ -28,11 +30,6 @@ from notesbro_bot.note_summary import (
 LOGGER = logging.getLogger(__name__)
 
 _API_RETRIES = 3
-
-_ACCESS_CLOSED_TEXT = (
-    "This bot is not accepting new users. If you should have access, ask the "
-    "administrator to add your Telegram user id to the database."
-)
 
 # user_data keys: next voice after /add is treated as merge.
 # (Telegram has no reliable caption on push-to-talk voice.)
@@ -81,13 +78,13 @@ def transcribe_voice_sync(
     audio: bytes,
     mime_type: str,
 ) -> str:
+    """Transcribe audio. No ``language`` hint: the model auto-detects it."""
     audio_file = _audio_file(audio, mime_type)
     for attempt in range(1, _API_RETRIES + 1):
         try:
             transcript = client.audio.transcriptions.create(
                 model=model,
                 file=audio_file,
-                language="ru",
             )
             return (transcript.text or "").strip()
         except Exception:
@@ -97,9 +94,25 @@ def transcribe_voice_sync(
             raise
 
 
+async def _locale_code(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+) -> str:
+    settings: Settings = context.application.bot_data["settings"]
+    repository: NoteRepository = context.application.bot_data["repository"]
+    user = update.effective_user
+    if user is not None:
+        stored = await repository.get_user_locale(user.id)
+        if stored in supported_locales():
+            return stored
+    language_code = user.language_code if user is not None else None
+    return detect_locale(language_code, settings.default_locale)
+
+
 async def _is_access_denied(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
+    locale: str,
 ) -> bool:
     settings: Settings = context.application.bot_data["settings"]
     repository: NoteRepository = context.application.bot_data["repository"]
@@ -113,7 +126,7 @@ async def _is_access_denied(
         return False
     await context.bot.send_message(
         chat_id=chat.id,
-        text=_ACCESS_CLOSED_TEXT,
+        text=translate(locale, "access_closed"),
     )
     return True
 
@@ -129,7 +142,8 @@ async def cmd_start(
 ) -> None:
     if update.effective_user is None or update.effective_chat is None:
         return
-    if await _is_access_denied(update, context):
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
         return
     repository: NoteRepository = context.application.bot_data["repository"]
     await repository.upsert_user(
@@ -137,14 +151,54 @@ async def cmd_start(
         chat_id=update.effective_chat.id,
     )
     if update.message:
-        await update.message.reply_text(
-            "Send a voice message. I will transcribe it and reply with "
-            "summarized notes: a note title, a list heading, and bullet "
-            "points.\n\n"
-            "To extend a note: reply /add to the note message you want to "
-            "update, then send your next voice message within two minutes. "
-            "/cancel clears an armed /add. (No message ids are stored.)"
+        await update.message.reply_text(translate(locale, "start"))
+
+
+async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user is None or update.effective_chat is None:
+        return
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
+        return
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=translate(locale, "help"),
+    )
+
+
+async def cmd_set_locale(
+    update: Update, context: ContextTypes.DEFAULT_TYPE
+) -> None:
+    if update.effective_user is None or update.effective_chat is None:
+        return
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
+        return
+    chat_id = update.effective_chat.id
+    args = context.args or []
+    if not args:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=translate(locale, "set_locale_missing"),
         )
+        return
+    chosen = args[0].strip().lower().split("-", maxsplit=1)[0]
+    if chosen not in supported_locales():
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=translate(locale, "set_locale_invalid"),
+        )
+        return
+    repository: NoteRepository = context.application.bot_data["repository"]
+    await repository.upsert_user(
+        user_id=update.effective_user.id,
+        chat_id=chat_id,
+    )
+    await repository.set_user_locale(update.effective_user.id, chosen)
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=translate(chosen, "set_locale_saved", code=chosen),
+    )
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -154,7 +208,8 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         or update.message is None
     ):
         return
-    if await _is_access_denied(update, context):
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
         return
     ud = context.user_data
     if ud is None:
@@ -162,9 +217,7 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if update.message.reply_to_message is None:
         _disarm_add_voice(ud)
-        await update.message.reply_text(
-            "Reply /add to the note message you want to update."
-        )
+        await update.message.reply_text(translate(locale, "add_need_reply"))
         return
 
     target_message_id = update.message.reply_to_message.message_id
@@ -172,18 +225,14 @@ async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     previous = parse_voice_note_from_message_text(prev_text)
     if previous is None:
         _disarm_add_voice(ud)
-        await update.message.reply_text(
-            "I couldn't parse that replied message as a note. "
-            "Reply /add to a note message previously sent by this bot."
-        )
+        await update.message.reply_text(translate(locale, "add_not_a_note"))
         return
 
     _arm_add_voice(ud)
     ud[_UD_ADD_TARGET_MESSAGE_ID] = int(target_message_id)
     ud[_UD_ADD_PREVIOUS_NOTE_JSON] = previous.model_dump_json()
     status_msg = await update.message.reply_text(
-        f"OK. Send 1 voice within {_ADD_VOICE_TTL_SEC:.0f}s to merge. "
-        "Use /cancel to stop."
+        translate(locale, "add_armed", ttl=f"{_ADD_VOICE_TTL_SEC:.0f}")
     )
     ud[_UD_ADD_STATUS_MESSAGE_ID] = int(status_msg.message_id)
 
@@ -193,17 +242,17 @@ async def cmd_cancel(
 ) -> None:
     if update.effective_user is None or update.message is None:
         return
-    if await _is_access_denied(update, context):
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
         return
     ud = context.user_data
     if ud is None:
         return
     had = bool(ud.get(_UD_AWAITING_ADD_VOICE))
     _disarm_add_voice(ud)
-    if had:
-        await update.message.reply_text("Cancelled merge mode.")
-    else:
-        await update.message.reply_text("Nothing to cancel.")
+    key = "cancel_done" if had else "cancel_nothing"
+    await update.message.reply_text(translate(locale, key))
+
 
 async def _safe_delete_message(
     context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int
@@ -238,12 +287,33 @@ async def _safe_edit_message(
         )
 
 
+async def _show_status(
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    chat_id: int,
+    reply_message: Message | None,
+    edit_message_id: int | None,
+    text: str,
+) -> None:
+    """Update whichever progress message this flow is using."""
+    if reply_message is not None:
+        await reply_message.edit_text(text)
+    elif edit_message_id is not None:
+        await _safe_edit_message(
+            context,
+            chat_id=chat_id,
+            message_id=int(edit_message_id),
+            text=text,
+        )
+
+
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.voice:
         return
     if update.effective_user is None or update.effective_chat is None:
         return
-    if await _is_access_denied(update, context):
+    locale = await _locale_code(update, context)
+    if await _is_access_denied(update, context, locale):
         return
 
     settings: Settings = context.bot_data["settings"]
@@ -264,30 +334,38 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             prev_json = ud.get(_UD_ADD_PREVIOUS_NOTE_JSON)
             if isinstance(prev_json, str) and prev_json.strip():
                 try:
-                    from notesbro_bot.models import VoiceNote
-
                     previous = VoiceNote.model_validate_json(prev_json)
                 except Exception:
                     previous = None
-            if previous is None:
-                _disarm_add_voice(ud)
-            else:
-                _disarm_add_voice(ud)
-                merge = True
+            _disarm_add_voice(ud)
+            merge = previous is not None
 
     voice = update.message.voice
     mime = voice.mime_type or "audio/ogg"
-    status = None
+    status: Message | None = None
+    pending_text = (
+        "status_transcribing_addon" if merge else "status_transcribing"
+    )
     if merge and add_status_message_id is not None:
-        await _safe_edit_message(
+        await _show_status(
             context,
             chat_id=chat_id,
-            message_id=int(add_status_message_id),
-            text="Transcribing add-on…",
+            reply_message=None,
+            edit_message_id=add_status_message_id,
+            text=translate(locale, pending_text),
         )
     else:
         status = await update.message.reply_text(
-            "Transcribing…" if not merge else "Transcribing add-on…"
+            translate(locale, pending_text)
+        )
+
+    async def show(text_key: str, **kwargs: str) -> None:
+        await _show_status(
+            context,
+            chat_id=chat_id,
+            reply_message=status,
+            edit_message_id=add_status_message_id,
+            text=translate(locale, text_key, **kwargs),
         )
 
     buf = BytesIO()
@@ -297,15 +375,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         audio = buf.getvalue()
     except Exception as e:
         LOGGER.exception("Telegram download failed")
-        if status is not None:
-            await status.edit_text(f"Could not download the voice file: {e}")
-        elif merge and add_status_message_id is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(add_status_message_id),
-                text=f"Could not download the voice file: {e}",
-            )
+        await show("err_download", error=str(e))
         return
 
     try:
@@ -318,51 +388,23 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
     except Exception as e:
         LOGGER.exception("Transcription failed")
-        if status is not None:
-            await status.edit_text(f"Transcription failed: {e}")
-        elif merge and add_status_message_id is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(add_status_message_id),
-                text=f"Transcription failed: {e}",
-            )
+        await show("err_transcribe", error=str(e))
         return
 
     if not transcript:
-        if status is not None:
-            await status.edit_text(
-                "(No speech recognized; try again or speak closer.)"
-            )
-        elif merge and add_status_message_id is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(add_status_message_id),
-                text="(No speech recognized; try again or speak closer.)",
-            )
+        await show("no_speech")
         return
 
-    if status is not None:
-        await status.edit_text(
-            "Merging into your note…" if merge else "Summarizing into notes…"
-        )
-    elif merge and add_status_message_id is not None:
-        await _safe_edit_message(
-            context,
-            chat_id=chat_id,
-            message_id=int(add_status_message_id),
-            text="Merging into your note…",
-        )
+    await show("status_merging" if merge else "status_summarizing")
     try:
-        if merge:
-            assert previous is not None
+        if merge and previous is not None:
             note = await asyncio.to_thread(
                 merge_transcript_into_note_sync,
                 client,
                 settings.model_name,
                 previous,
                 transcript,
+                locale,
             )
         else:
             note = await asyncio.to_thread(
@@ -370,18 +412,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 client,
                 settings.model_name,
                 transcript,
+                locale,
             )
     except Exception as e:
         LOGGER.exception("Note step failed")
-        if status is not None:
-            await status.edit_text(f"Could not build notes: {e}")
-        elif merge and add_status_message_id is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(add_status_message_id),
-                text=f"Could not build notes: {e}",
-            )
+        await show("err_notes", error=str(e))
         return
 
     html_body = voice_note_to_telegram_html(note)
@@ -408,23 +443,13 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     message_id=int(status.message_id),
                 )
         else:
-            assert status is not None
-            await status.edit_text(html_body, parse_mode=ParseMode.HTML)
+            if status is not None:
+                await status.edit_text(html_body, parse_mode=ParseMode.HTML)
     except Exception as e:
         LOGGER.exception(
             "Telegram HTML edit failed, sending plain transcript fallback"
         )
-        if status is not None:
-            await status.edit_text(
-                f"(Could not send formatted notes: {e})\n\n{transcript}"
-            )
-        elif merge and add_status_message_id is not None:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(add_status_message_id),
-                text=f"(Could not send formatted notes: {e})\n\n{transcript}",
-            )
+        await show("err_format", error=str(e), transcript=transcript)
 
 
 def build_application(settings: Settings) -> Application:
@@ -446,6 +471,8 @@ def build_application(settings: Settings) -> Application:
     application.bot_data["repository"] = repository
 
     application.add_handler(CommandHandler("start", cmd_start))
+    application.add_handler(CommandHandler("help", cmd_help))
+    application.add_handler(CommandHandler("set_locale", cmd_set_locale))
     application.add_handler(CommandHandler("add", cmd_add))
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(MessageHandler(filters.VOICE, on_voice))

@@ -29,6 +29,9 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+notesbro_bot = ["messages.yaml"]
+
 [tool.ruff]
 line-length = 79
 target-version = "py311"
@@ -40,7 +43,9 @@ select = ["E", "W", "F", "I", "N"]
 addopts = [
   "--cov=notesbro_bot",
   "--cov-report=term-missing",
+  "--cov-fail-under=91",
 ]
+pythonpath = ["tests"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

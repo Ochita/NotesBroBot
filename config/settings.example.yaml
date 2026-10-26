@@ -10,5 +10,9 @@ model_name: "deepseek-v4-flash"
 # Persist whitelist DB in the sqlite database file.
 database_path: "notesbro.sqlite3"
 
+# Fallback UI language: en, ru, uk, it, fr, de, es.
+# Users can override it with /set_locale; notes follow the voice language.
+default_locale: "en"
+
 # When false, only users already present in the users table may use the bot.
 allow_new_users: true
