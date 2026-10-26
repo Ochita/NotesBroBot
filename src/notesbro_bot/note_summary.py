@@ -180,6 +180,35 @@ def apply_note_edits(note: VoiceNote, text: str) -> tuple[VoiceNote, int]:
     return note_out, applied
 
 
+def find_item_by_quote(note: VoiceNote, quote: str | None) -> int | None:
+    """Locate the bullet a Telegram quote points at.
+
+    Users select a line of the note and reply to it, so the quote carries the
+    exact text. Match exactly first, then ignoring case/bullet decoration, and
+    only fall back to a unique substring so an ambiguous quote edits nothing.
+    """
+    if not quote or not quote.strip():
+        return None
+    needle = _clean_quoted(quote)
+    if not needle:
+        return None
+    for index, item in enumerate(note.items):
+        if _clean_quoted(item) == needle:
+            return index
+    partial = [
+        index
+        for index, item in enumerate(note.items)
+        if needle in _clean_quoted(item)
+    ]
+    return partial[0] if len(partial) == 1 else None
+
+
+def _clean_quoted(raw: str) -> str:
+    """Drop bullet/heading decoration and collapse whitespace for compare."""
+    text = raw.replace("•", " ").replace("📝", " ").replace("📋", " ")
+    return " ".join(text.split()).casefold()
+
+
 def _parse_item_number(raw: str) -> int | None:
     """Map a 1-based user-facing bullet number to a 0-based index."""
     try:

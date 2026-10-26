@@ -44,6 +44,7 @@ class FakeMessage:
     text: str | None = None
     voice: FakeVoice | None = None
     reply_to_message: FakeMessage | None = None
+    quote: object | None = None
     replies: list[str] = field(default_factory=list)
     edits: list[tuple[str, dict]] = field(default_factory=list)
     markups: list[object] = field(default_factory=list)

@@ -29,6 +29,7 @@ from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
     _parse_item_number,
     apply_note_edits,
+    find_item_by_quote,
     merge_transcript_into_note_sync,
     parse_voice_note_from_message_text,
     summarize_transcript_to_note_sync,
@@ -493,10 +494,16 @@ async def on_edit_text(
             await update.message.reply_text(text)
 
     raw = update.message.text
-    if isinstance(selected, int) and not raw.lstrip().startswith(("+", "-")):
-        # Tapped a button: the whole message is the new text for that item.
+    # Priority: a quote names the line exactly, a tapped button picks by
+    # number, and anything else is the `2 new text` command syntax.
+    quoted = _quote_text(update.message)
+    index = find_item_by_quote(previous, quoted)
+    if index is None and isinstance(selected, int):
+        index = selected
+    if index is not None and not raw.lstrip().startswith(("+", "-")):
+        # The whole message is the new text for the quoted/tapped item.
         if raw.strip():
-            raw = f"{selected + 1} {raw.strip()}"
+            raw = f"{index + 1} {raw.strip()}"
 
     edited, applied = apply_note_edits(previous, raw)
     if not applied:
@@ -530,6 +537,12 @@ async def on_edit_text(
     await update.message.reply_text(
         translate(locale, "edit_done", count=str(applied))
     )
+
+
+def _quote_text(message: Message) -> str | None:
+    """Selected fragment of the replied message, if the user quoted one."""
+    quote = getattr(message, "quote", None)
+    return getattr(quote, "text", None) if quote is not None else None
 
 
 def _load_note(raw: object) -> VoiceNote | None:

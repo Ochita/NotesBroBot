@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from notesbro_bot.models import VoiceNote
-from notesbro_bot.note_summary import apply_note_edits
+from notesbro_bot.note_summary import apply_note_edits, find_item_by_quote
 
 NOTE = VoiceNote(
     note_title="Planning",
@@ -74,3 +74,28 @@ def test_numbered_list_helper_matches_editing_numbers() -> None:
     from notesbro_bot.bot import _number_lines
 
     assert _number_lines(NOTE).splitlines()[1] == "2. call mom"
+
+
+def test_quote_matches_exact_line() -> None:
+    assert find_item_by_quote(NOTE, "call mom") == 1
+
+
+def test_quote_ignores_bullet_and_case() -> None:
+    assert find_item_by_quote(NOTE, "• CALL MOM") == 1
+    assert find_item_by_quote(NOTE, "  call\n  mom  ".replace("\n", " ")) == 1
+
+
+def test_quote_matches_unique_substring() -> None:
+    assert find_item_by_quote(NOTE, "taxes") == 2
+
+
+def test_ambiguous_or_empty_quote_edits_nothing() -> None:
+    assert find_item_by_quote(NOTE, None) is None
+    assert find_item_by_quote(NOTE, "   ") is None
+    # "milk" appears once, but "a" is in both "call mom" and "file taxes"
+    assert find_item_by_quote(NOTE, "milk") == 0
+    assert find_item_by_quote(NOTE, "a") is None
+
+
+def test_quote_of_heading_is_not_an_item() -> None:
+    assert find_item_by_quote(NOTE, "Planning") is None

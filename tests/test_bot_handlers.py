@@ -839,3 +839,49 @@ async def test_cmd_edit_attaches_item_buttons(edit_context) -> None:
     await cmd_edit(make_update(message=message), edit_context)
     keyboard = message.markups[-1]
     assert [b.text for b in keyboard.inline_keyboard[0]] == ["1"]
+
+
+async def test_quote_selects_line_without_numbers(edit_context) -> None:
+    await _arm_edit(edit_context)
+    note = VoiceNote(note_title="T", list_title="L", items=["first", "second"])
+    edit_context.user_data["edit_previous_note_json"] = (
+        note.model_dump_json()
+    )
+    follow_up = FakeMessage(
+        message_id=7,
+        text="brand new wording",
+        quote=SimpleNamespace(text="• second"),
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    edited = edit_context.bot.edited[-1]["text"]
+    assert "brand new wording" in edited
+    assert "first" in edited
+
+
+async def test_quote_beats_tapped_button(edit_context) -> None:
+    await _arm_edit(edit_context)
+    note = VoiceNote(note_title="T", list_title="L", items=["first", "second"])
+    edit_context.user_data["edit_previous_note_json"] = (
+        note.model_dump_json()
+    )
+    edit_context.user_data["edit_selected_item"] = 0  # button said item 1
+    follow_up = FakeMessage(
+        message_id=7,
+        text="changed via quote",
+        quote=SimpleNamespace(text="second"),  # quote says item 2
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    edited = edit_context.bot.edited[-1]["text"]
+    assert "first" in edited
+    assert "changed via quote" in edited
+
+
+async def test_quote_of_unknown_text_falls_back_to_command_syntax(
+    edit_context,
+) -> None:
+    await _arm_edit(edit_context)
+    follow_up = FakeMessage(
+        message_id=7, text="1 explicit", quote=SimpleNamespace(text="zzz")
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    assert "explicit" in edit_context.bot.edited[-1]["text"]

@@ -28,8 +28,10 @@ en:
     I couldn't parse that replied message as a note. Reply /edit to a note
     message previously sent by this bot.
   edit_prompt: |-
-    Tap an item number below to replace just that item, or send the lines
-    to fix, one per line:
+    Best: reply to the note with a quote of the line you want to fix and
+    send just the new text for it.
+
+    Or tap an item number below, or send the lines to fix one per line:
     2 new text - replace item 2
     -2 - delete item 2
     + some text - add a new item
@@ -97,8 +99,10 @@ ru:
     Не удалось распознать в этом сообщении заметку. Ответьте /edit на
     сообщение с заметкой, которое отправлял этот бот.
   edit_prompt: |-
-    Нажмите номер пункта ниже, чтобы заменить только его, либо пришлите
-    строки для правки — по одной на строку:
+    Лучше всего: ответьте на заметку, выделив нужную строку, и пришлите
+    только новый текст для неё.
+
+    Или нажмите номер пункта ниже, или пришлите строки для правки:
     Меняется только та строка, которую вы указали:
     2 новый текст - заменить пункт 2
     -2 - удалить пункт 2
@@ -168,8 +172,10 @@ uk:
     Не вдалося розпізнати в цьому повідомленні нотатку. Дайте відповідь
     /edit на повідомлення з нотаткою, яке надсилав цей бот.
   edit_prompt: |-
-    Натисніть номер пункту нижче, щоб замінити лише його, або надішліть
-    рядки для правки — по одному на рядок.
+    Найкраще: дайте відповідь на нотатку, виділивши потрібний рядок, і
+    надішліть лише новий текст для нього.
+
+    Або натисніть номер пункту нижче, або надішліть рядки для правки:
     Змінюється лише той рядок, який ви вказали:
     2 новий текст - замінити пункт 2
     -2 - видалити пункт 2
@@ -238,8 +244,10 @@ it:
     Non riesco a interpretare quel messaggio come una nota. Rispondi /edit
     a un messaggio di nota inviato da questo bot.
   edit_prompt: |-
-    Tocca il numero di un punto per sostituire solo quello, oppure invia
-    le righe da correggere, una per riga:
+    Meglio: rispondi alla nota citando la riga da correggere e invia solo
+    il nuovo testo.
+
+    Oppure tocca il numero di un punto, o invia le righe da correggere:
     2 nuovo testo - sostituisci il punto 2
     -2 - elimina il punto 2
     + nuovo punto - aggiungi un punto
@@ -307,8 +315,10 @@ fr:
     Je n'ai pas pu interpréter ce message comme une note. Répondez /edit
     à un message de note envoyé par ce bot.
   edit_prompt: |-
-    Touchez le numéro d'un point pour le remplacer, ou envoyez les lignes
-    à corriger, une par ligne.
+    Le mieux : répondez à la note en citant la ligne à corriger et envoyez
+    seulement le nouveau texte.
+
+    Ou touchez un numéro de point, ou envoyez les lignes à corriger :
     Seule la ligne indiquée change :
     2 nouveau texte - remplacer le point 2
     -2 - supprimer le point 2
@@ -378,8 +388,10 @@ de:
     Ich konnte diese Nachricht nicht als Notiz lesen. Antworte mit /edit auf
     eine Notiznachricht, die dieser Bot gesendet hat.
   edit_prompt: |-
-    Tippe auf eine Punktnummer, um nur diesen zu ersetzen, oder sende die
-    zu ändernden Zeilen, eine pro Zeile.
+    Am besten: antworte auf die Notiz mit einem Zitat der Zeile und sende
+    nur den neuen Text dafür.
+
+    Oder tippe auf eine Punktnummer oder sende die Zeilen einzeln:
     Nur die genannte Zeile ändert sich:
     2 neuer Text - Punkt 2 ersetzen
     -2 - Punkt 2 löschen
@@ -448,8 +460,10 @@ es:
     No pude interpretar ese mensaje como una nota. Responde /edit a un
     mensaje de nota enviado por este bot.
   edit_prompt: |-
-    Toca el número de un punto para reemplazar solo ese, o envía las
-    líneas a corregir, una por línea.
+    Mejor: responde a la nota citando la línea a corregir y envía solo el
+    texto nuevo.
+
+    O toca el número de un punto, o envía las líneas a corregir:
     Solo cambia la línea que indiques:
     2 texto nuevo - reemplazar el punto 2
     -2 - eliminar el punto 2
