@@ -406,19 +406,26 @@ async def on_edit_text(
     if await _is_access_denied(update, context, locale):
         return
     chat_id = update.effective_chat.id
+    # Only reuse a message we actually own and can edit; never post another
+    # instruction block just because the user replied to something else.
     status = update.message.reply_to_message
     if status is None or status.message_id != status_message_id:
-        status = await update.message.reply_text(
-            translate(locale, "edit_prompt")
-        )
+        status = None
+
+    async def notify(key: str, **kwargs: str) -> None:
+        text = translate(locale, key, **kwargs)
+        if status is not None:
+            await status.edit_text(text)
+        else:
+            await update.message.reply_text(text)
 
     edited, applied = apply_note_edits(previous, update.message.text)
     if not applied:
-        await status.edit_text(translate(locale, "edit_nothing"))
+        await notify("edit_nothing")
         return
     if edited == previous:
         # Telegram rejects a no-op edit with "message is not modified".
-        await status.edit_text(translate(locale, "edit_same"))
+        await notify("edit_same")
         return
 
     html_body = voice_note_to_telegram_html(edited)
@@ -431,14 +438,16 @@ async def on_edit_text(
         )
     except Exception as e:
         LOGGER.exception("Telegram HTML edit failed")
-        await status.edit_text(
-            translate(locale, "err_format", error=str(e), transcript="")
-        )
+        await notify("err_format", error=str(e), transcript="")
         return
+    # Clear the instruction block and the user's edit lines, then confirm.
     if status_message_id is not None:
         await _safe_delete_message(
             context, chat_id=chat_id, message_id=int(status_message_id)
         )
+    await _safe_delete_message(
+        context, chat_id=chat_id, message_id=update.message.message_id
+    )
     await update.message.reply_text(
         translate(locale, "edit_done", count=str(applied))
     )

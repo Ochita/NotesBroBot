@@ -717,3 +717,50 @@ async def test_edit_done_reports_edited_line_count(edit_context) -> None:
     follow_up = FakeMessage(text="1 one\nt Renamed")
     await on_edit_text(make_update(message=follow_up), edit_context)
     assert "Lines changed: 2" in follow_up.replies[-1]
+
+
+async def test_edit_reply_to_other_message_spawns_no_extra_prompt(
+    edit_context,
+) -> None:
+    """Replying to anything but our prompt must not post another copy."""
+    await _arm_edit(edit_context)
+    edit_context.user_data["edit_status_message_id"] = 99
+    # user replied to the /edit command, not to the prompt
+    follow_up = FakeMessage(
+        message_id=7,
+        text="1 fixed",
+        reply_to_message=FakeMessage(message_id=5, text="/edit"),
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    # only the short confirmation, never the long instruction block again
+    assert len(follow_up.replies) == 1
+    assert "2 new text" not in follow_up.replies[0]
+    assert follow_up.replies[0].startswith("Note updated")
+
+
+async def test_edit_cleans_up_instruction_and_user_lines(
+    edit_context,
+) -> None:
+    await _arm_edit(edit_context)
+    status = FakeMessage(message_id=99)
+    edit_context.user_data["edit_status_message_id"] = 99
+    follow_up = FakeMessage(
+        message_id=7, text="1 fixed", reply_to_message=status
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    deleted = [d["message_id"] for d in edit_context.bot.deleted]
+    assert deleted == [99, 7]
+    assert follow_up.replies[-1].startswith("Note updated")
+
+
+async def test_edit_invalid_input_does_not_resend_prompt(edit_context) -> None:
+    await _arm_edit(edit_context)
+    status = FakeMessage(message_id=99)
+    edit_context.user_data["edit_status_message_id"] = 99
+    follow_up = FakeMessage(
+        message_id=7, text="garbage", reply_to_message=status
+    )
+    await on_edit_text(make_update(message=follow_up), edit_context)
+    # hint is edited in place, not posted again
+    assert follow_up.replies == []
+    assert status.edits[-1][0].startswith("No valid edits")
