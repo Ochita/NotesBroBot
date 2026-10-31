@@ -22,10 +22,11 @@ from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
     _retry,
-    add_item,
+    add_items,
     parse_voice_note_from_message_text,
     replace_quoted_text,
-    summarize_transcript_to_note_sync,
+    split_into_items_sync,
+    summarize_text_to_note_sync,
     voice_note_to_telegram_html,
 )
 
@@ -269,6 +270,7 @@ async def _arm_or_apply_text(
             text=typed,
             chat_id=chat_id,
             target_message_id=int(target.message_id),
+            split=mode == MODE_ADD,
         )
         return
 
@@ -296,8 +298,13 @@ async def _apply_text(
     text: str,
     chat_id: int,
     target_message_id: int,
+    split: bool = False,
 ) -> None:
-    """Apply typed or transcribed text as an append or a quoted replace."""
+    """Apply typed or transcribed text as an append or a quoted replace.
+
+    ``split`` asks the model to break the text into several bullets first,
+    which matters for /add because one message may carry many points.
+    """
     if mode == MODE_EDIT:
         updated = replace_quoted_text(note, quote, text)
         if updated is None:
@@ -307,7 +314,8 @@ async def _apply_text(
             )
             return
     else:
-        updated = add_item(note, text)
+        items = await _bullets(context, locale, text, split=split)
+        updated = add_items(note, items)
         if updated is None:
             await context.bot.send_message(
                 chat_id=chat_id,
@@ -323,6 +331,32 @@ async def _apply_text(
         chat_id=chat_id,
         text=translate(locale, "note_updated"),
     )
+
+
+async def _bullets(
+    context: ContextTypes.DEFAULT_TYPE,
+    locale: str,
+    text: str,
+    *,
+    split: bool,
+) -> list[str]:
+    """Bullets for /add: the model splits them, with a plain fallback."""
+    if not split:
+        return [text]
+    settings: Settings = context.bot_data["settings"]
+    client: OpenAI = context.bot_data["ai_client"]
+    try:
+        items = await asyncio.to_thread(
+            split_into_items_sync,
+            client,
+            settings.model_name,
+            text,
+            locale,
+        )
+    except Exception:
+        LOGGER.exception("Splitting into bullets failed, using raw text")
+        return [text]
+    return items or [text]
 
 
 async def cmd_add(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -448,16 +482,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.effective_chat.id
     ud = context.user_data or {}
 
-    # An armed session (from /add or /edit without text) consumes this voice.
-    pending = _pending(ud)
-    if pending is not None:
-        _disarm(ud)
-    armed = pending is not None
-
+    armed = _pending(ud) is not None
     status_text = (
         "status_transcribing_addon" if armed else "status_transcribing"
     )
-    pending_status_id = (pending or {}).get("status_message_id")
+    pending_status_id = (ud.get(_UD_PENDING) or {}).get("status_message_id")
     if pending_status_id:
         await _safe_edit_message(
             context,
@@ -513,11 +542,75 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await show("status_merging" if armed else "status_summarizing")
+    await _produce(
+        update,
+        context,
+        locale=locale,
+        text=transcript,
+        status=status,
+        status_id=pending_status_id,
+    )
+    if pending_status_id:
+        await _safe_delete_message(
+            context, chat_id=chat_id, message_id=int(pending_status_id)
+        )
+
+
+async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """A plain text message creates a note, same pipeline as a voice one."""
+    if not update.message or not update.message.text:
+        return
+    locale = await _guard(update, context)
+    if locale is None:
+        return
+    text = update.message.text.strip()
+    if not text:
+        return
+    status = await update.message.reply_text(
+        translate(locale, "status_summarizing")
+    )
+    await _produce(update, context, locale=locale, text=text, status=status)
+
+
+async def _produce(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    *,
+    locale: str,
+    text: str,
+    status: Message | None,
+    status_id: int | None = None,
+) -> None:
+    """Turn text into an armed note or a fresh one - typed or spoken alike."""
+    settings: Settings = context.bot_data["settings"]
+    client: OpenAI = context.bot_data["ai_client"]
+    ud = context.user_data or {}
+    chat_id = update.effective_chat.id  # type: ignore[union-attr]
+
+    pending = _pending(ud)
+    if pending is not None:
+        _disarm(ud)
+    armed = pending is not None
+
+    async def fail(key: str, **kwargs: str) -> None:
+        """Report an error in the progress message when we have one."""
+        text = translate(locale, key, **kwargs)
+        if status is not None:
+            await status.edit_text(text)
+        elif status_id:
+            await _safe_edit_message(
+                context,
+                chat_id=chat_id,
+                message_id=int(status_id),
+                text=text,
+            )
+        else:
+            await _send(context, chat_id, text)
 
     if armed:
         note = _load_note(pending.get("note_json"))
         if note is None:
-            await show("note_update_failed")
+            await fail("note_update_failed")
             return
         await _apply_text(
             update,
@@ -526,44 +619,47 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             mode=str(pending.get("mode", MODE_ADD)),
             note=note,
             quote=pending.get("quote"),
-            text=transcript,
+            text=text,
             chat_id=chat_id,
             target_message_id=int(pending["target_message_id"]),
+            split=not pending.get("quote"),
         )
-    else:
-        try:
-            note = await asyncio.to_thread(
-                summarize_transcript_to_note_sync,
-                client,
-                settings.model_name,
-                transcript,
-                locale,
-            )
-        except Exception as e:
-            LOGGER.exception("Note step failed")
-            await show("err_notes", error=str(e))
-            return
-        html_body = voice_note_to_telegram_html(note)
-        try:
-            if status is not None:
-                await status.edit_text(html_body, parse_mode=ParseMode.HTML)
-            else:
-                await context.bot.send_message(
-                    chat_id=chat_id,
-                    text=html_body,
-                    parse_mode=ParseMode.HTML,
-                )
-        except Exception as e:
-            LOGGER.exception(
-                "Telegram HTML send failed, sending plain transcript"
-            )
-            await show("err_format", error=str(e), transcript=transcript)
-    if pending is not None and pending.get("status_message_id"):
-        await _safe_delete_message(
-            context,
-            chat_id=chat_id,
-            message_id=int(pending["status_message_id"]),
+        return
+
+    try:
+        note = await asyncio.to_thread(
+            summarize_text_to_note_sync,
+            client,
+            settings.model_name,
+            text,
+            locale,
         )
+    except Exception as e:
+        LOGGER.exception("Note step failed")
+        await fail("err_notes", error=str(e))
+        return
+
+    html_body = voice_note_to_telegram_html(note)
+    try:
+        if status is not None:
+            await status.edit_text(html_body, parse_mode=ParseMode.HTML)
+        else:
+            await _send(
+                context, chat_id, html_body, parse_mode=ParseMode.HTML
+            )
+    except Exception as e:
+        LOGGER.exception("Telegram HTML send failed, sending plain text")
+        await fail("err_format", error=str(e), transcript=text)
+
+
+async def _send(
+    context: ContextTypes.DEFAULT_TYPE,
+    chat_id: int,
+    text: str,
+    parse_mode: str | None = None,
+) -> None:
+    kwargs = {"parse_mode": parse_mode} if parse_mode else {}
+    await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
 
 
 def build_application(settings: Settings) -> Application:
@@ -591,5 +687,8 @@ def build_application(settings: Settings) -> Application:
     application.add_handler(CommandHandler("edit", cmd_edit))
     application.add_handler(CommandHandler("cancel", cmd_cancel))
     application.add_handler(MessageHandler(filters.VOICE, on_voice))
+    application.add_handler(
+        MessageHandler(filters.TEXT & ~filters.COMMAND, on_text)
+    )
 
     return application

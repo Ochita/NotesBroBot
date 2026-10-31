@@ -75,12 +75,49 @@ def summarize_transcript_to_note_sync(
     transcript: str,
     locale: str | None = None,
 ) -> VoiceNote:
+    return summarize_text_to_note_sync(
+        client, model_name, transcript, locale=locale
+    )
+
+
+def summarize_text_to_note_sync(
+    client: "OpenAI",
+    model_name: str,
+    text: str,
+    locale: str | None = None,
+) -> VoiceNote:
+    """Turn any prose into a note - a spoken transcript or typed text."""
     language = _language_name(locale)
     prompt = (
         _SUMMARY_INSTRUCTION.format(language=language)
-        + f"\n\nTranscript:\n{transcript}"
+        + f"\n\nTranscript:\n{text}"
     )
     return _complete_note(client, model_name, prompt, locale or "en")
+
+
+_ITEMS_INSTRUCTION = """Split user text into bullets for an existing note.
+
+Rules:
+- Return only the new bullet points, one idea per line.
+- Write them in {language}.
+- Keep the wording close to the source; do not summarize away detail.
+- Do not invent facts.
+"""
+
+
+def split_into_items_sync(
+    client: "OpenAI",
+    model_name: str,
+    text: str,
+    locale: str | None = None,
+) -> list[str]:
+    """Split one message into several bullets (``/add`` may carry many)."""
+    prompt = (
+        _ITEMS_INSTRUCTION.format(language=_language_name(locale))
+        + f"\n\nText:\n{text}"
+    )
+    note = _complete_note(client, model_name, prompt, locale or "en")
+    return note.items
 
 
 def _language_name(locale: str | None) -> str:
@@ -135,10 +172,21 @@ def voice_note_to_telegram_html(note: VoiceNote, max_len: int = 3900) -> str:
 
 def add_item(note: VoiceNote, text: str) -> VoiceNote | None:
     """Append one bullet. Returns ``None`` when nothing can be added."""
-    item = " ".join(text.split())
-    if not item or len(note.items) >= _MAX_ITEMS:
+    return add_items(note, [text])
+
+
+def add_items(note: VoiceNote, texts: list[str]) -> VoiceNote | None:
+    """Append several bullets at once, trimming to the schema limit."""
+    clean = [" ".join(t.split()) for t in texts]
+    clean = [t for t in clean if t]
+    if not clean:
         return None
-    return note.model_copy(update={"items": [*note.items, item]})
+    room = _MAX_ITEMS - len(note.items)
+    if room <= 0:
+        return None
+    return note.model_copy(
+        update={"items": [*note.items, *clean[:room]]}
+    )
 
 
 def replace_quoted_text(

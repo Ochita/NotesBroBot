@@ -26,6 +26,7 @@ from notesbro_bot.bot import (
     cmd_help,
     cmd_set_locale,
     cmd_start,
+    on_text,
     on_voice,
     transcribe_voice_sync,
 )
@@ -61,8 +62,16 @@ class FakeClient:
         self.chat_calls.append(kwargs)
         if self.fail:
             raise RuntimeError("chat down")
+        prompt = kwargs["messages"][0]["content"]
+        if prompt.startswith("Split user text"):
+            # model the split: one bullet per non-empty input line
+            source = prompt.split("Text:\n", 1)[-1]
+            items = [ln.strip() for ln in source.splitlines() if ln.strip()]
+            note = NOTE.model_copy(update={"items": items or NOTE.items})
+        else:
+            note = NOTE
         return SimpleNamespace(
-            choices=[SimpleNamespace(message=SimpleNamespace(parsed=NOTE))]
+            choices=[SimpleNamespace(message=SimpleNamespace(parsed=note))]
         )
 
 
@@ -506,6 +515,7 @@ async def test_edit_quote_miss_reports_it() -> None:
 
 
 async def test_voice_applies_armed_add() -> None:
+    # the model splits a dictated add-on into bullets
     context = _ctx(client=FakeClient(transcript="dictated point"))
     message = _reply()
     await cmd_add(make_update(message=message), context)  # arm
@@ -566,3 +576,58 @@ async def test_armed_voice_with_lost_note_reports_failure() -> None:
     message = FakeMessage(voice=FakeVoice())
     await on_voice(make_update(message=message), context)
     assert "Could not update the note" in context.bot.edited[-1]["text"]
+
+
+async def test_plain_text_creates_a_note_like_voice() -> None:
+    context = _ctx(client=FakeClient(transcript="ignored"))
+    message = FakeMessage(text="buy milk and call mom")
+    await on_text(make_update(message=message), context)
+    # same pipeline: progress reply, then the rendered note edited into it
+    assert message.replies[0] == "Summarizing into notes…"
+    assert message.edits[-1][0] == NOTE_TEXT
+    assert context.bot.edited == []
+
+
+async def test_plain_text_blank_or_missing_user_is_ignored() -> None:
+    context = _ctx(client=FakeClient())
+    await on_text(make_update(message=FakeMessage(text="   ")), context)
+    assert context.bot.sent == []
+    update = make_update(message=FakeMessage(text="hello"))
+    update.effective_user = None
+    await on_text(update, context)
+    assert context.bot.sent == []
+
+
+async def test_plain_text_note_failure_reports_in_status() -> None:
+    context = _ctx(client=FakeClient(fail=True))
+    message = FakeMessage(text="hi")
+    await on_text(make_update(message=message), context)
+    assert "Could not build notes" in message.edits[-1][0]
+
+
+async def test_add_text_splits_several_points() -> None:
+    context = _ctx(args=["buy", "milk", "and", "call", "mom"])
+    message = _reply()
+    # one line with both ideas: the model splits it into two bullets
+    context.bot_data["ai_client"] = FakeClient()
+    await cmd_add(make_update(message=message), context)
+    edited = context.bot.edited[-1]["text"]
+    assert "buy milk and call mom" in edited
+    assert context.bot.sent[-1]["text"] == "Note updated."
+
+
+async def test_add_split_falls_back_to_one_bullet_on_error() -> None:
+    context = _ctx(args=["one", "point"])
+    context.bot_data["ai_client"] = FakeClient(fail=True)
+    message = _reply()
+    await cmd_add(make_update(message=message), context)
+    assert "one point" in context.bot.edited[-1]["text"]
+
+
+async def test_edit_does_not_split_quoted_replacement() -> None:
+    context = _ctx(args=["two", "words"])
+    message = _reply()
+    message.quote = SimpleNamespace(text="second")
+    await cmd_edit(make_update(message=message), context)
+    edited = context.bot.edited[-1]["text"]
+    assert "two words" in edited

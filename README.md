@@ -6,10 +6,10 @@ OpenAI-compatible endpoint (speech-to-text + structured chat completion).
 ## What it does
 
 - `/start` subscribes the user (optional whitelist via `allow_new_users`)
-- User sends a voice message
-- Bot transcribes it through `/audio/transcriptions`, passing the user's
-  current locale as the `language` hint
-- Bot turns the transcript into a structured note: `note_title`,
+- User sends a voice message **or plain text** — both take the same pipeline
+- For voice, the bot transcribes it through `/audio/transcriptions`, passing
+  the user's current locale as the `language` hint
+- The bot turns that text into a structured note: `note_title`,
   `list_title`, and bullet `items`
 - Bot replies with the note as Telegram HTML
 - Notes and all bot messages are written in the user's locale (`en`, `ru`,
@@ -24,7 +24,7 @@ arms a 60-second voice session:
 
 | Command | With text | Without text |
 | --- | --- | --- |
-| `/add` | `/add buy milk` appends the point | waits 60s for a voice, appends it |
+| `/add` | `/add buy milk` appends the point(s), split apart if there are several | waits 60s for a voice, appends it |
 | `/edit` | `/edit oat milk` replaces the quoted fragment | waits 60s for a voice, replaces with it |
 | `/cancel` | — | stops the waiting session |
 
@@ -37,6 +37,10 @@ you quote:        milk
 /edit oat milk
 result:     buy oat milk
 ```
+
+Typed text and speech share one code path: `/add` sends the text through a
+split step so one message can contribute several bullets, while `/edit` swaps
+only the quoted fragment.
 
 ## Project structure
 

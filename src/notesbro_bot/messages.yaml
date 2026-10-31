@@ -30,7 +30,7 @@ en:
     /set_locale <code> - UI language: en, ru, uk, it, fr, de, es
 
     Notes:
-    /add <text>  - reply to a note, append this point
+    /add <text>  - reply to a note; several points get split apart
     /add         - reply to a note, then send a voice to append it
     /edit <text> - reply to a note quoting the fragment to replace
     /edit        - reply quoting it, then send a voice to replace it
@@ -96,7 +96,7 @@ ru:
     /set_locale <код> - язык интерфейса: en, ru, uk, it, fr, de, es
 
     Заметки:
-    /add <текст>  - ответьте на заметку, чтобы добавить пункт
+    /add <текст>  - ответьте на заметку; несколько пунктов разделятся
     /add          - ответьте на заметку и отправьте голосовое для пункта
     /edit <текст> - ответьте на заметку, выделив фрагмент для замены
     /edit         - ответьте, выделив фрагмент, и отправьте голосовое
@@ -162,7 +162,7 @@ uk:
     /set_locale <код> - мова інтерфейсу: en, ru, uk, it, fr, de, es
 
     Нотатки:
-    /add <текст>  - дайте відповідь на нотатку, щоб додати пункт
+    /add <текст>  - дайте відповідь на нотатку; кілька пунктів розділяться
     /add          - дайте відповідь і надішліть голосове для пункту
     /edit <текст> - дайте відповідь, виділивши фрагмент для заміни
     /edit         - дайте відповідь із виділенням і надішліть голосове
@@ -227,7 +227,7 @@ it:
     /set_locale <codice> - lingua: en, ru, uk, it, fr, de, es
 
     Note:
-    /add <testo>  - rispondi a una nota, aggiungi questo punto
+    /add <testo>  - rispondi a una nota; più punti vengono separati
     /add          - rispondi a una nota, poi invia un vocale da aggiungere
     /edit <testo> - rispondi citando il frammento da sostituire
     /edit         - rispondi citandolo, poi invia un vocale che lo sostituisca
@@ -293,7 +293,7 @@ fr:
     /set_locale <code> - langue : en, ru, uk, it, fr, de, es
 
     Notes :
-    /add <texte>  - répondez à une note pour ajouter ce point
+    /add <texte>  - répondez à une note ; plusieurs points sont séparés
     /add          - répondez à une note puis envoyez un vocal à ajouter
     /edit <texte> - répondez en citant le fragment à remplacer
     /edit         - répondez en le citant, puis envoyez un vocal
@@ -359,7 +359,7 @@ de:
     /set_locale <Code> - Sprache: en, ru, uk, it, fr, de, es
 
     Notizen:
-    /add <Text>  - auf eine Notiz antworten, Punkt anhängen
+    /add <Text>  - auf eine Notiz antworten; mehrere Punkte werden geteilt
     /add         - auf eine Notiz antworten, dann Sprachnachricht senden
     /edit <Text> - antworten und den Ausschnitt zum Ersetzen zitieren
     /edit        - zitieren, dann Sprachnachricht zum Ersetzen senden
@@ -416,7 +416,7 @@ es:
   help: |-
     Comandos:
     /start - suscribirse y ver la ayuda
-    /add <texto> - responde a una nota para añadir el punto;
+    /add <texto> - responde a una nota; varios puntos se separan
     /add solo - responde y envía un audio para unirlo
     /cancel - cancelar un /add preparado
     /edit <texto> - responde a una nota, cita un fragmento, reemplázalo
