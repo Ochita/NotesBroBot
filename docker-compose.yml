@@ -6,7 +6,6 @@ services:
     image: notesbro-bot:latest
     container_name: notesbro-bot
     restart: unless-stopped
-    command: ["python", "-m", "notesbro_bot", "--config", "/run/secrets/notesbro/settings.yaml"]
     volumes:
       - ./config/settings.yaml:/run/secrets/notesbro/settings.yaml:ro
       - notesbro_data:/app/data

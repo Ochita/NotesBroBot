@@ -18,4 +18,3 @@ def test_parse_voice_note_from_message_text_roundtrip_shape() -> None:
     assert note.note_title == "Project kickoff"
     assert note.list_title == "Next steps"
     assert note.items == ["Schedule meeting", "Prepare agenda"]
-

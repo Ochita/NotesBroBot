@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from io import BytesIO
 
-from openai import OpenAI
+from openai import AsyncOpenAI
 from telegram import Message, Update
 from telegram.constants import ParseMode
 from telegram.ext import (
@@ -21,17 +20,17 @@ from notesbro_bot.db import NoteRepository
 from notesbro_bot.i18n import detect_locale, supported_locales, translate
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import (
-    _retry,
     add_items,
     parse_voice_note_from_message_text,
     replace_quoted_text,
-    split_into_items_sync,
-    summarize_text_to_note_sync,
+    split_into_items,
+    summarize_text_to_note,
     voice_note_to_telegram_html,
 )
 
 LOGGER = logging.getLogger(__name__)
 
+#: The OpenAI SDK retries network/5xx errors this many times on its own.
 _API_RETRIES = 3
 
 # One armed voice session shared by /add and /edit. All values live under
@@ -87,8 +86,8 @@ def _audio_file(audio: bytes, mime_type: str) -> tuple[str, bytes, str]:
     return (f"voice.{ext}", audio, mime)
 
 
-def transcribe_voice_sync(
-    client: OpenAI,
+async def transcribe_voice(
+    client: AsyncOpenAI,
     model: str,
     audio: bytes,
     mime_type: str,
@@ -99,65 +98,42 @@ def transcribe_voice_sync(
     kwargs: dict = {"model": model, "file": audio_file}
     if language:
         kwargs["language"] = language
-    transcript = _retry(
-        lambda: client.audio.transcriptions.create(**kwargs)
-    )
+    transcript = await client.audio.transcriptions.create(**kwargs)
     return (transcript.text or "").strip()
-
-
-async def _locale_code(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-) -> str:
-    settings: Settings = context.application.bot_data["settings"]
-    repository: NoteRepository = context.application.bot_data["repository"]
-    user = update.effective_user
-    if user is not None:
-        stored = await repository.get_user_locale(user.id)
-        if stored in supported_locales():
-            return stored
-    language_code = user.language_code if user is not None else None
-    return detect_locale(language_code, settings.default_locale)
-
-
-async def _is_access_denied(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    locale: str,
-) -> bool:
-    settings: Settings = context.application.bot_data["settings"]
-    repository: NoteRepository = context.application.bot_data["repository"]
-    if settings.allow_new_users:
-        return False
-    user = update.effective_user
-    chat = update.effective_chat
-    if user is None or chat is None:
-        return True
-    if await repository.user_exists(user.id):
-        return False
-    await context.bot.send_message(
-        chat_id=chat.id,
-        text=translate(locale, "access_closed"),
-    )
-    return True
 
 
 async def _guard(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> str | None:
     """Resolve the locale and enforce the whitelist. ``None`` means stop."""
-    if update.effective_user is None or update.effective_chat is None:
+    user = update.effective_user
+    chat = update.effective_chat
+    if user is None or chat is None:
         return None
-    locale = await _locale_code(update, context)
-    if await _is_access_denied(update, context, locale):
-        return None
-    return locale
+    settings: Settings = context.application.bot_data["settings"]
+    repository: NoteRepository = context.application.bot_data["repository"]
+    locale = await repository.get_user_locale(user.id)
+    if locale not in supported_locales():
+        locale = detect_locale(user.language_code, settings.default_locale)
+    if settings.allow_new_users or await repository.user_exists(user.id):
+        return locale
+    await context.bot.send_message(
+        chat_id=chat.id,
+        text=translate(locale, "access_closed"),
+    )
+    return None
 
 
 async def _post_init(application: Application) -> None:
     repository: NoteRepository = application.bot_data["repository"]
     await repository.init()
     LOGGER.info("Database initialized")
+
+
+async def _post_shutdown(application: Application) -> None:
+    client: AsyncOpenAI | None = application.bot_data.get("ai_client")
+    if client is not None:
+        await client.close()
 
 
 async def cmd_start(
@@ -261,7 +237,6 @@ async def _arm_or_apply_text(
     if typed:
         _disarm(ud)
         await _apply_text(
-            update,
             context,
             locale=locale,
             mode=mode,
@@ -288,7 +263,6 @@ async def _arm_or_apply_text(
 
 
 async def _apply_text(
-    update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     *,
     locale: str,
@@ -344,10 +318,9 @@ async def _bullets(
     if not split:
         return [text]
     settings: Settings = context.bot_data["settings"]
-    client: OpenAI = context.bot_data["ai_client"]
+    client: AsyncOpenAI = context.bot_data["ai_client"]
     try:
-        items = await asyncio.to_thread(
-            split_into_items_sync,
+        items = await split_into_items(
             client,
             settings.model_name,
             text,
@@ -407,36 +380,31 @@ async def cmd_cancel(
     await update.message.reply_text(translate(locale, key))
 
 
-async def _quiet(coro, what: str) -> None:
-    """Await a best-effort Telegram call: stale or deleted messages no-op."""
-    try:
-        await coro
-    except Exception:
-        LOGGER.debug("Could not %s", what)
-
-
-async def _safe_edit_message(
+async def _status_update(
     context: ContextTypes.DEFAULT_TYPE,
     *,
     chat_id: int,
-    message_id: int,
+    status: Message | None,
+    status_id: int | None,
     text: str,
+    **kwargs,
 ) -> None:
-    await _quiet(
-        context.bot.edit_message_text(
-            chat_id=chat_id, message_id=message_id, text=text
-        ),
-        f"edit message {message_id} in chat {chat_id}",
-    )
-
-
-async def _safe_delete_message(
-    context: ContextTypes.DEFAULT_TYPE, *, chat_id: int, message_id: int
-) -> None:
-    await _quiet(
-        context.bot.delete_message(chat_id=chat_id, message_id=message_id),
-        f"delete message {message_id} in chat {chat_id}",
-    )
+    """Rewrite the progress message in place, or send a fresh one."""
+    if status is not None:
+        await status.edit_text(text, **kwargs)
+    elif status_id is not None:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=int(status_id),
+                text=text,
+                **kwargs,
+            )
+        except Exception:
+            # The armed status message may have been deleted by the user.
+            LOGGER.debug("Could not edit status message %s", status_id)
+    else:
+        await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
 
 
 async def cmd_edit(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -469,7 +437,6 @@ def _load_note(raw: object) -> VoiceNote | None:
         return None
 
 
-
 async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not update.message or not update.message.voice:
         return
@@ -478,7 +445,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     settings: Settings = context.bot_data["settings"]
-    client: OpenAI = context.bot_data["ai_client"]
+    client: AsyncOpenAI = context.bot_data["ai_client"]
     chat_id = update.effective_chat.id
     ud = context.user_data or {}
 
@@ -488,10 +455,11 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
     pending_status_id = (ud.get(_UD_PENDING) or {}).get("status_message_id")
     if pending_status_id:
-        await _safe_edit_message(
+        await _status_update(
             context,
             chat_id=chat_id,
-            message_id=int(pending_status_id),
+            status=None,
+            status_id=pending_status_id,
             text=translate(locale, status_text),
         )
         status: Message | None = None
@@ -501,16 +469,13 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         )
 
     async def show(text_key: str, **kwargs: str) -> None:
-        text = translate(locale, text_key, **kwargs)
-        if status is not None:
-            await status.edit_text(text)
-        elif pending_status_id:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(pending_status_id),
-                text=text,
-            )
+        await _status_update(
+            context,
+            chat_id=chat_id,
+            status=status,
+            status_id=pending_status_id,
+            text=translate(locale, text_key, **kwargs),
+        )
 
     voice = update.message.voice
     mime = voice.mime_type or "audio/ogg"
@@ -525,8 +490,7 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     try:
-        transcript = await asyncio.to_thread(
-            transcribe_voice_sync,
+        transcript = await transcribe_voice(
             client,
             settings.stt_model,
             audio,
@@ -551,9 +515,14 @@ async def on_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         status_id=pending_status_id,
     )
     if pending_status_id:
-        await _safe_delete_message(
-            context, chat_id=chat_id, message_id=int(pending_status_id)
-        )
+        try:
+            await context.bot.delete_message(
+                chat_id=chat_id, message_id=int(pending_status_id)
+            )
+        except Exception:
+            LOGGER.debug(
+                "Could not delete status message %s", pending_status_id
+            )
 
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -583,7 +552,7 @@ async def _produce(
 ) -> None:
     """Turn text into an armed note or a fresh one - typed or spoken alike."""
     settings: Settings = context.bot_data["settings"]
-    client: OpenAI = context.bot_data["ai_client"]
+    client: AsyncOpenAI = context.bot_data["ai_client"]
     ud = context.user_data or {}
     chat_id = update.effective_chat.id  # type: ignore[union-attr]
 
@@ -594,18 +563,13 @@ async def _produce(
 
     async def fail(key: str, **kwargs: str) -> None:
         """Report an error in the progress message when we have one."""
-        text = translate(locale, key, **kwargs)
-        if status is not None:
-            await status.edit_text(text)
-        elif status_id:
-            await _safe_edit_message(
-                context,
-                chat_id=chat_id,
-                message_id=int(status_id),
-                text=text,
-            )
-        else:
-            await _send(context, chat_id, text)
+        await _status_update(
+            context,
+            chat_id=chat_id,
+            status=status,
+            status_id=status_id,
+            text=translate(locale, key, **kwargs),
+        )
 
     if armed:
         note = _load_note(pending.get("note_json"))
@@ -613,7 +577,6 @@ async def _produce(
             await fail("note_update_failed")
             return
         await _apply_text(
-            update,
             context,
             locale=locale,
             mode=str(pending.get("mode", MODE_ADD)),
@@ -627,8 +590,7 @@ async def _produce(
         return
 
     try:
-        note = await asyncio.to_thread(
-            summarize_text_to_note_sync,
+        note = await summarize_text_to_note(
             client,
             settings.model_name,
             text,
@@ -641,38 +603,31 @@ async def _produce(
 
     html_body = voice_note_to_telegram_html(note)
     try:
-        if status is not None:
-            await status.edit_text(html_body, parse_mode=ParseMode.HTML)
-        else:
-            await _send(
-                context, chat_id, html_body, parse_mode=ParseMode.HTML
-            )
+        await _status_update(
+            context,
+            chat_id=chat_id,
+            status=status,
+            status_id=status_id,
+            text=html_body,
+            parse_mode=ParseMode.HTML,
+        )
     except Exception as e:
         LOGGER.exception("Telegram HTML send failed, sending plain text")
         await fail("err_format", error=str(e), transcript=text)
 
 
-async def _send(
-    context: ContextTypes.DEFAULT_TYPE,
-    chat_id: int,
-    text: str,
-    parse_mode: str | None = None,
-) -> None:
-    kwargs = {"parse_mode": parse_mode} if parse_mode else {}
-    await context.bot.send_message(chat_id=chat_id, text=text, **kwargs)
-
-
 def build_application(settings: Settings) -> Application:
-    client = OpenAI(
+    client = AsyncOpenAI(
         api_key=settings.api_key,
         base_url=settings.base_url,
-        max_retries=0,
+        max_retries=_API_RETRIES,
     )
     repository = NoteRepository(settings.database_path)
     application = (
         Application.builder()
         .token(settings.telegram_bot_token)
         .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
         .concurrent_updates(True)
         .build()
     )

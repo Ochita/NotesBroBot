@@ -44,8 +44,7 @@ def test_load_settings_custom_base_url(tmp_path: Path) -> None:
 def test_load_settings_default_model(tmp_path: Path) -> None:
     p = tmp_path / "settings.yaml"
     p.write_text(
-        'telegram_bot_token: "t"\n'
-        'api_key: "k"\n',
+        'telegram_bot_token: "t"\napi_key: "k"\n',
         encoding="utf-8",
     )
     s = load_settings(str(p))
@@ -99,13 +98,17 @@ def test_config_must_be_mapping(tmp_path: Path) -> None:
     [
         ("api_key: k\n", "telegram_bot_token"),
         ("telegram_bot_token: t\n", "api_key"),
-        ("telegram_bot_token: t\napi_key: k\ndatabase_path: ' '\n",
-         "database_path"),
+        (
+            "telegram_bot_token: t\napi_key: k\ndatabase_path: ' '\n",
+            "database_path",
+        ),
         ("telegram_bot_token: t\napi_key: k\nbase_url: ' '\n", "base_url"),
         ("telegram_bot_token: t\napi_key: k\nmodel_name: []\n", "model_name"),
         ("telegram_bot_token: t\napi_key: k\nstt_model: ' '\n", "stt_model"),
-        ("telegram_bot_token: t\napi_key: k\ndefault_locale: zz\n",
-         "default_locale"),
+        (
+            "telegram_bot_token: t\napi_key: k\ndefault_locale: zz\n",
+            "default_locale",
+        ),
     ],
 )
 def test_invalid_values(tmp_path: Path, body: str, message: str) -> None:
@@ -118,9 +121,7 @@ def test_invalid_values(tmp_path: Path, body: str, message: str) -> None:
 def test_default_locale_normalized(tmp_path: Path) -> None:
     p = tmp_path / "settings.yaml"
     p.write_text(
-        'telegram_bot_token: "t"\n'
-        'api_key: "k"\n'
-        'default_locale: "RU-ru"\n',
+        'telegram_bot_token: "t"\napi_key: "k"\ndefault_locale: "RU-ru"\n',
         encoding="utf-8",
     )
     assert load_settings(str(p)).default_locale == "ru"
@@ -128,7 +129,5 @@ def test_default_locale_normalized(tmp_path: Path) -> None:
 
 def test_default_locale_defaults_to_english(tmp_path: Path) -> None:
     p = tmp_path / "settings.yaml"
-    p.write_text(
-        'telegram_bot_token: "t"\napi_key: "k"\n', encoding="utf-8"
-    )
+    p.write_text('telegram_bot_token: "t"\napi_key: "k"\n', encoding="utf-8")
     assert load_settings(str(p)).default_locale == "en"

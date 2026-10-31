@@ -4,22 +4,26 @@ from types import SimpleNamespace
 
 import pytest
 
-from notesbro_bot.bot import transcribe_voice_sync
+from notesbro_bot.bot import transcribe_voice
 from notesbro_bot.models import VoiceNote
-from notesbro_bot.note_summary import summarize_transcript_to_note_sync
+from notesbro_bot.note_summary import summarize_text_to_note
 
 
-def test_transcribe_voice_sync_uses_aitunnel_stt() -> None:
+async def _no_sleep(_seconds: float) -> None:
+    """Skip the retry backoff so tests stay instant."""
+
+
+async def test_transcribe_voice_uses_aitunnel_stt() -> None:
     seen: dict = {}
 
-    def create(**kwargs):
+    async def create(**kwargs):
         seen.update(kwargs)
         return SimpleNamespace(text="  привет  ")
 
     client = SimpleNamespace(
         audio=SimpleNamespace(transcriptions=SimpleNamespace(create=create))
     )
-    text = transcribe_voice_sync(
+    text = await transcribe_voice(
         client,
         "voxtral-small-24b-2507-stt",
         b"abc",
@@ -32,11 +36,11 @@ def test_transcribe_voice_sync_uses_aitunnel_stt() -> None:
     assert seen["file"] == ("voice.ogg", b"abc", "audio/ogg")
 
 
-def test_summarize_uses_parsed_note() -> None:
+async def test_summarize_uses_parsed_note() -> None:
     parsed = VoiceNote(note_title=" T ", list_title="L", items=[" a "])
     seen: dict = {}
 
-    def parse(**kwargs):
+    async def parse(**kwargs):
         seen.update(kwargs)
         return SimpleNamespace(
             choices=[
@@ -49,7 +53,7 @@ def test_summarize_uses_parsed_note() -> None:
     client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(parse=parse))
     )
-    note = summarize_transcript_to_note_sync(client, "chat-model", "hello")
+    note = await summarize_text_to_note(client, "chat-model", "hello")
     assert note.note_title == "T"
     assert note.items == ["a"]
     assert seen["model"] == "chat-model"
@@ -58,7 +62,7 @@ def test_summarize_uses_parsed_note() -> None:
 
 
 def _client_with(message: SimpleNamespace, calls: list) -> SimpleNamespace:
-    def parse(**kwargs):
+    async def parse(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(choices=[SimpleNamespace(message=message)])
 
@@ -67,34 +71,31 @@ def _client_with(message: SimpleNamespace, calls: list) -> SimpleNamespace:
     )
 
 
-def test_note_falls_back_to_json_content() -> None:
+async def test_note_falls_back_to_json_content() -> None:
     note = VoiceNote(note_title="T", list_title="L", items=["a"])
     message = SimpleNamespace(parsed=None, content=note.model_dump_json())
     client = _client_with(message, [])
-    result = summarize_transcript_to_note_sync(client, "m", "hi")
+    result = await summarize_text_to_note(client, "m", "hi")
     assert result == note
 
 
-def test_note_retries_then_raises_on_empty_response(monkeypatch) -> None:
+async def test_note_retries_then_raises_on_empty_response(monkeypatch) -> None:
     from notesbro_bot import note_summary
 
-    monkeypatch.setattr(note_summary.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(note_summary.asyncio, "sleep", _no_sleep)
     calls: list = []
     message = SimpleNamespace(parsed=None, content="  ")
     client = _client_with(message, calls)
     with pytest.raises(ValueError, match="no structured note"):
-        summarize_transcript_to_note_sync(client, "m", "hi")
+        await summarize_text_to_note(client, "m", "hi")
     assert len(calls) == 3
 
 
-def test_note_retries_transient_error_then_succeeds(monkeypatch) -> None:
-    from notesbro_bot import note_summary
-
-    monkeypatch.setattr(note_summary.time, "sleep", lambda _s: None)
+async def test_note_does_not_retry_transport_errors() -> None:
     note = VoiceNote(note_title="T", list_title="L", items=["a"])
     attempts = {"n": 0}
 
-    def parse(**kwargs):
+    async def parse(**kwargs):
         _ = kwargs
         attempts["n"] += 1
         if attempts["n"] == 1:
@@ -106,8 +107,10 @@ def test_note_retries_transient_error_then_succeeds(monkeypatch) -> None:
     client = SimpleNamespace(
         chat=SimpleNamespace(completions=SimpleNamespace(parse=parse))
     )
-    assert summarize_transcript_to_note_sync(client, "m", "hi") == note
-    assert attempts["n"] == 2
+    # transport-level retries live in the SDK (max_retries), not here
+    with pytest.raises(RuntimeError, match="flaky"):
+        await summarize_text_to_note(client, "m", "hi")
+    assert attempts["n"] == 1
 
 
 def test_normalize_note_fills_empty_fields() -> None:
@@ -120,7 +123,6 @@ def test_normalize_note_fills_empty_fields() -> None:
     assert result.items == [
         "(Из расшифровки не удалось выделить отдельные пункты.)"
     ]
-
 
 
 def test_parse_note_returns_none_for_garbage() -> None:
@@ -159,15 +161,13 @@ def test_parse_note_without_any_heading_defaults_list_title() -> None:
         (None, "English"),
     ],
 )
-def test_summary_prompt_pins_the_locale_language(
+async def test_summary_prompt_pins_the_locale_language(
     locale, language
 ) -> None:
     seen: list = []
     note = VoiceNote(note_title="T", list_title="L", items=["a"])
-    client = _client_with(
-        SimpleNamespace(parsed=note, content=None), seen
-    )
-    summarize_transcript_to_note_sync(client, "m", "hi", locale)
+    client = _client_with(SimpleNamespace(parsed=note, content=None), seen)
+    await summarize_text_to_note(client, "m", "hi", locale)
     prompt = seen[0]["messages"][0]["content"]
     assert f"Write every field in {language}" in prompt
     # must not follow the transcript language any more

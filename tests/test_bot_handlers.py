@@ -17,8 +17,9 @@ from fakes import (
 from notesbro_bot.bot import (
     MODE_ADD,
     MODE_EDIT,
-    _locale_code,
+    _guard,
     _post_init,
+    _post_shutdown,
     build_application,
     cmd_add,
     cmd_cancel,
@@ -28,7 +29,7 @@ from notesbro_bot.bot import (
     cmd_start,
     on_text,
     on_voice,
-    transcribe_voice_sync,
+    transcribe_voice,
 )
 from notesbro_bot.models import VoiceNote
 from notesbro_bot.note_summary import voice_note_to_telegram_html
@@ -38,7 +39,7 @@ NOTE_TEXT = voice_note_to_telegram_html(NOTE)
 
 
 class FakeClient:
-    """Stands in for OpenAI: stt + chat calls with optional failure."""
+    """Stands in for AsyncOpenAI: stt + chat calls with optional failure."""
 
     def __init__(self, transcript: str = "hello", fail: bool = False) -> None:
         self.transcript = transcript
@@ -52,13 +53,13 @@ class FakeClient:
             completions=SimpleNamespace(parse=self._parse)
         )
 
-    def _create(self, **kwargs):
+    async def _create(self, **kwargs):
         self.stt_calls.append(kwargs)
         if self.fail:
             raise RuntimeError("stt down")
         return SimpleNamespace(text=self.transcript)
 
-    def _parse(self, **kwargs):
+    async def _parse(self, **kwargs):
         self.chat_calls.append(kwargs)
         if self.fail:
             raise RuntimeError("chat down")
@@ -155,12 +156,12 @@ async def test_start_falls_back_to_default_locale() -> None:
     assert "vocale" in message.replies[0]
 
 
-async def test_locale_code_ignores_unknown_stored_locale() -> None:
+async def test_guard_ignores_unknown_stored_locale() -> None:
     repository = FakeRepository()
     repository.locales[42] = "klingon"
     context = FakeContext(repository=repository)
     update = make_update(user=FakeUser(language_code="fr"))
-    assert await _locale_code(update, context) == "fr"
+    assert await _guard(update, context) == "fr"
 
 
 async def test_help_sends_commands() -> None:
@@ -189,20 +190,24 @@ async def test_set_locale_saves_and_confirms_in_new_locale() -> None:
     assert "Язык сохранен" in context.bot.sent[-1]["text"]
 
 
-
-
-
-
-
 async def test_post_init_initializes_repository() -> None:
     repository = FakeRepository()
-    await _post_init(
-        SimpleNamespace(bot_data={"repository": repository})
-    )
+    await _post_init(SimpleNamespace(bot_data={"repository": repository}))
     assert repository.initialized is True
 
 
+async def test_post_shutdown_closes_ai_client() -> None:
+    closed: list[bool] = []
 
+    class ClosingClient:
+        async def close(self) -> None:
+            closed.append(True)
+
+    app = SimpleNamespace(bot_data={"ai_client": ClosingClient()})
+    await _post_shutdown(app)
+    assert closed == [True]
+    # a missing client must not explode on shutdown
+    await _post_shutdown(SimpleNamespace(bot_data={}))
 
 
 async def test_on_voice_happy_path() -> None:
@@ -263,10 +268,11 @@ async def test_on_voice_reports_empty_transcript() -> None:
 
 async def test_on_voice_reports_note_failure() -> None:
     client = FakeClient()
-    client._parse = lambda **kwargs: (_ for _ in ()).throw(
-        RuntimeError("boom")
-    )  # type: ignore[assignment]
-    client.chat.completions.parse = client._parse  # type: ignore[union-attr]
+
+    async def boom(**_kwargs):
+        raise RuntimeError("boom")
+
+    client.chat.completions.parse = boom  # type: ignore[union-attr]
     context = FakeContext(client=client)
     message = FakeMessage(voice=FakeVoice())
     await on_voice(make_update(message=message), context)
@@ -288,7 +294,6 @@ async def test_on_voice_falls_back_to_plain_text_on_format_error() -> None:
     assert "hi" in message.edits[-1][0]
 
 
-
 def test_build_application_registers_handlers() -> None:
     application = build_application(make_settings())
     assert application.bot_data["settings"].model_name == "chat-model"
@@ -296,9 +301,10 @@ def test_build_application_registers_handlers() -> None:
     assert application.bot_data["ai_client"] is not None
 
 
-def test_transcribe_omits_language_hint_when_absent() -> None:
+async def test_transcribe_omits_language_hint_when_absent() -> None:
     client = FakeClient()
-    assert transcribe_voice_sync(client, "m", b"a", "audio/ogg") == "hello"
+    text = await transcribe_voice(client, "m", b"a", "audio/ogg")
+    assert text == "hello"
     assert "language" not in client.stt_calls[0]
 
 
@@ -323,21 +329,19 @@ async def test_stt_language_follows_telegram_language_code() -> None:
     assert client.stt_calls[0]["language"] == "it"
 
 
-def test_transcribe_strips_and_defaults_mime() -> None:
+async def test_transcribe_strips_and_defaults_mime() -> None:
     client = FakeClient(transcript="  text  ")
-    assert transcribe_voice_sync(client, "m", b"a", "") == "text"
+    text = await transcribe_voice(client, "m", b"a", "")
+    assert text == "text"
     assert client.stt_calls[0]["file"][0] == "voice.ogg"
 
 
-@pytest.mark.parametrize("attempt", [1])
-def test_transcribe_retries_then_raises(monkeypatch, attempt: int) -> None:
-    from notesbro_bot import bot as bot_module
-
-    monkeypatch.setattr(bot_module.time, "sleep", lambda _s: None)
+async def test_transcribe_raises_after_single_attempt() -> None:
+    # network retries are the SDK's job now (max_retries), not ours
     client = FakeClient(fail=True)
     with pytest.raises(RuntimeError, match="stt down"):
-        transcribe_voice_sync(client, "m", b"a", "audio/mpeg")
-    assert len(client.stt_calls) == 3
+        await transcribe_voice(client, "m", b"a", "audio/mpeg")
+    assert len(client.stt_calls) == 1
 
 
 def test_audio_file_extension_mapping() -> None:
@@ -347,12 +351,11 @@ def test_audio_file_extension_mapping() -> None:
     assert _audio_file(b"a", "audio/AMR; codecs=x")[0] == "voice.amr"
 
 
-
-async def test_locale_code_without_user() -> None:
+async def test_guard_without_user() -> None:
     context = FakeContext()
     update = make_update()
     update.effective_user = None
-    assert await _locale_code(update, context) == "en"
+    assert await _guard(update, context) is None
 
 
 @pytest.mark.parametrize(
@@ -397,41 +400,7 @@ async def test_add_without_message() -> None:
     assert context.bot.sent == []
 
 
-
-
-
-async def _arm_edit(context: FakeContext) -> None:
-    """Run /edit against the fake note so the next text is an edit batch."""
-    command = FakeMessage(
-        reply_to_message=FakeMessage(message_id=55, text=NOTE_TEXT)
-    )
-    await cmd_edit(make_update(message=command), context)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-NOTE_TWO = VoiceNote(
-    note_title="T", list_title="L", items=["first", "second"]
-)
+NOTE_TWO = VoiceNote(note_title="T", list_title="L", items=["first", "second"])
 NOTE_TWO_TEXT = voice_note_to_telegram_html(NOTE_TWO)
 
 
@@ -440,8 +409,9 @@ def _ctx(**kwargs):
 
 
 def _reply(text: str = NOTE_TWO_TEXT, message_id: int = 55):
-    return FakeMessage(reply_to_message=FakeMessage(
-        message_id=message_id, text=text))
+    return FakeMessage(
+        reply_to_message=FakeMessage(message_id=message_id, text=text)
+    )
 
 
 async def test_add_with_text_appends_immediately() -> None:

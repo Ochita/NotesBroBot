@@ -102,10 +102,11 @@ python -m notesbro_bot --config /run/secrets/notesbro/settings.yaml
 
 ## Run with Docker
 
-1. Prepare Docker config file:
+1. Prepare the config file and point `database_path` at the mounted volume:
 
 ```bash
-cp config/settings.docker.example.yaml config/settings.yaml
+cp config/settings.example.yaml config/settings.yaml
+# then set database_path: "/app/data/notesbro.sqlite3"
 ```
 
 Edit `config/settings.yaml` and set:
@@ -161,7 +162,8 @@ docker compose down
   locale — never note contents.
 - UI text lives in `src/notesbro_bot/messages.yaml`; notes use the user's
   locale regardless of the language actually spoken.
-- API requests retry up to 3 times for transient failures.
+- API requests retry up to 3 times for transient failures (the OpenAI SDK's
+  own `max_retries`); an empty structured response is retried up to 3 times.
 - Notes are not stored anywhere: `/add` and `/edit` re-parse the replied
   message text and rewrite that message through the Telegram API.
 
@@ -169,6 +171,7 @@ docker compose down
 
 ```bash
 pip install -e ".[dev]"
-pytest          # coverage floor is 91% via --cov-fail-under
+pytest                  # coverage floor is 91% via --cov-fail-under
 ruff check src tests
+ruff format --check src tests
 ```

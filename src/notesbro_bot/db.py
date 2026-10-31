@@ -22,9 +22,11 @@ class NoteRepository:
                 );
                 """
             )
-            await self._ensure_columns(
-                conn, "users", {"locale": "locale TEXT"}
-            )
+            # Tables created before locales existed lack the column.
+            async with conn.execute("PRAGMA table_info(users);") as cursor:
+                columns = {str(row[1]) for row in await cursor.fetchall()}
+            if "locale" not in columns:
+                await conn.execute("ALTER TABLE users ADD COLUMN locale TEXT;")
             await conn.commit()
 
     async def user_exists(self, user_id: int) -> bool:
@@ -68,16 +70,3 @@ class NoteRepository:
             return None
         value = row[0]
         return str(value) if value else None
-
-    @staticmethod
-    async def _ensure_columns(
-        conn: aiosqlite.Connection,
-        table: str,
-        columns: dict[str, str],
-    ) -> None:
-        async with conn.execute(f"PRAGMA table_info({table});") as cursor:
-            rows = await cursor.fetchall()
-        have = {str(row[1]) for row in rows}
-        for name, ddl in columns.items():
-            if name not in have:
-                await conn.execute(f"ALTER TABLE {table} ADD COLUMN {ddl};")

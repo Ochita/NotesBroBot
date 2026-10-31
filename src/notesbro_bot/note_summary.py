@@ -1,42 +1,31 @@
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
-import time
-from collections.abc import Callable
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from notesbro_bot.i18n import translate
 from notesbro_bot.models import VoiceNote
 
 if TYPE_CHECKING:
-    from openai import OpenAI
+    from openai import AsyncOpenAI
 
 LOGGER = logging.getLogger(__name__)
 
-T = TypeVar("T")
+# Network errors and 5xx are already retried by the OpenAI SDK (max_retries
+# in build_application); these attempts only cover an empty structured note.
+_NOTE_ATTEMPTS = 3
 
-_API_RETRIES = 3
 _MAX_ITEMS = 16
 _MAX_ITEM_CHARS = 200
 
-def _retry(call: Callable[[], T]) -> T:
-    """Run ``call`` up to ``_API_RETRIES`` times, backing off between tries."""
-    for attempt in range(1, _API_RETRIES + 1):
-        try:
-            return call()
-        except Exception:
-            if attempt == _API_RETRIES:
-                raise
-            time.sleep(0.8 * attempt)
-    raise AssertionError("unreachable")
 
-
-def _complete_note(
-    client: "OpenAI", model: str, prompt: str, locale: str
+async def _complete_note(
+    client: "AsyncOpenAI", model: str, prompt: str, locale: str
 ) -> VoiceNote:
-    def once() -> VoiceNote:
-        response = client.chat.completions.parse(
+    for attempt in range(1, _NOTE_ATTEMPTS + 1):
+        response = await client.chat.completions.parse(
             model=model,
             messages=[{"role": "user", "content": prompt}],
             response_format=VoiceNote,
@@ -47,14 +36,11 @@ def _complete_note(
             return _normalize_note(parsed, locale)
         text = (message.content or "").strip()
         if text:
-            return _normalize_note(
-                VoiceNote.model_validate_json(text), locale
-            )
+            return _normalize_note(VoiceNote.model_validate_json(text), locale)
         LOGGER.warning("Structured note response empty.")
-        raise ValueError("Model returned no structured note.")
-
-    # The empty-response ValueError is retried too, hence the inner function.
-    return _retry(once)
+        if attempt < _NOTE_ATTEMPTS:
+            await asyncio.sleep(0.8 * attempt)
+    raise ValueError("Model returned no structured note.")
 
 
 _SUMMARY_INSTRUCTION = """Turn a raw speech transcript into structured notes.
@@ -69,19 +55,8 @@ Rules:
 """
 
 
-def summarize_transcript_to_note_sync(
-    client: "OpenAI",
-    model_name: str,
-    transcript: str,
-    locale: str | None = None,
-) -> VoiceNote:
-    return summarize_text_to_note_sync(
-        client, model_name, transcript, locale=locale
-    )
-
-
-def summarize_text_to_note_sync(
-    client: "OpenAI",
+async def summarize_text_to_note(
+    client: "AsyncOpenAI",
     model_name: str,
     text: str,
     locale: str | None = None,
@@ -92,7 +67,7 @@ def summarize_text_to_note_sync(
         _SUMMARY_INSTRUCTION.format(language=language)
         + f"\n\nTranscript:\n{text}"
     )
-    return _complete_note(client, model_name, prompt, locale or "en")
+    return await _complete_note(client, model_name, prompt, locale or "en")
 
 
 _ITEMS_INSTRUCTION = """Split user text into bullets for an existing note.
@@ -105,8 +80,8 @@ Rules:
 """
 
 
-def split_into_items_sync(
-    client: "OpenAI",
+async def split_into_items(
+    client: "AsyncOpenAI",
     model_name: str,
     text: str,
     locale: str | None = None,
@@ -116,7 +91,7 @@ def split_into_items_sync(
         _ITEMS_INSTRUCTION.format(language=_language_name(locale))
         + f"\n\nText:\n{text}"
     )
-    note = _complete_note(client, model_name, prompt, locale or "en")
+    note = await _complete_note(client, model_name, prompt, locale or "en")
     return note.items
 
 
@@ -184,9 +159,7 @@ def add_items(note: VoiceNote, texts: list[str]) -> VoiceNote | None:
     room = _MAX_ITEMS - len(note.items)
     if room <= 0:
         return None
-    return note.model_copy(
-        update={"items": [*note.items, *clean[:room]]}
-    )
+    return note.model_copy(update={"items": [*note.items, *clean[:room]]})
 
 
 def replace_quoted_text(

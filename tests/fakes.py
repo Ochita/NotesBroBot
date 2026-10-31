@@ -36,17 +36,13 @@ class FakeMessage:
     quote: object | None = None
     replies: list[str] = field(default_factory=list)
     edits: list[tuple[str, dict]] = field(default_factory=list)
-    markups: list[object] = field(default_factory=list)
 
-    async def reply_text(self, text: str, **kwargs):
+    async def reply_text(self, text: str, **_kwargs):
         self.replies.append(text)
-        if kwargs.get("reply_markup") is not None:
-            self.markups.append(kwargs["reply_markup"])
         return type(self)(
             message_id=self.message_id + 1,
             replies=self.replies,
             edits=self.edits,
-            markups=self.markups,
         )
 
     async def edit_text(self, text: str, **kwargs):
@@ -57,25 +53,18 @@ class FakeMessage:
 class FakeBot:
     sent: list[dict] = field(default_factory=list)
     edited: list[dict] = field(default_factory=list)
-    deleted: list[dict] = field(default_factory=list)
     audio: bytes = b"audio-bytes"
     fail_download: bool = False
-    fail_edit: bool = False
-    fail_delete: bool = False
 
     async def send_message(self, **kwargs):
         self.sent.append(kwargs)
         return FakeMessage(message_id=900)
 
     async def edit_message_text(self, **kwargs):
-        if self.fail_edit:
-            raise RuntimeError("edit failed")
         self.edited.append(kwargs)
 
     async def delete_message(self, **kwargs):
-        if self.fail_delete:
-            raise RuntimeError("delete failed")
-        self.deleted.append(kwargs)
+        _ = kwargs
 
     async def get_file(self, file_id: str):
         _ = file_id

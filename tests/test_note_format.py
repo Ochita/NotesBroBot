@@ -6,7 +6,7 @@ from notesbro_bot.note_summary import voice_note_to_telegram_html
 
 def test_voice_note_to_telegram_html_escapes_and_structure() -> None:
     note = VoiceNote(
-        note_title='Shopping & <stuff>',
+        note_title="Shopping & <stuff>",
         list_title="Today's list",
         items=["Milk", "Bread & butter"],
     )
